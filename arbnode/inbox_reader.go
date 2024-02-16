@@ -604,7 +604,7 @@ func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
 		return nil, err
 	}
 	if delayedCount == 0 {
-		if r.config().StartBlock != 0 {
+		if r.config().StartBlock != 0 && r.config().StartBlock > r.firstMessageBlock.Uint64() {
 			return new(big.Int).SetUint64(r.config().StartBlock), nil
 		}
 		return new(big.Int).Set(r.firstMessageBlock), nil
