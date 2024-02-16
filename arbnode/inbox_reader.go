@@ -82,6 +82,7 @@ var TestInboxReaderConfig = InboxReaderConfig{
 	TargetMessagesRead:  500,
 	MaxBlocksToRead:     2000,
 	ReadMode:            "latest",
+	StartBlock:          100,
 }
 
 type InboxReader struct {
