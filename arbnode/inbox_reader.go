@@ -344,7 +344,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					return err
 				}
 			}
-			if checkingDelayedCount > 0 {
+			if checkingDelayedCount > 0 && checkingDelayedCount > r.config().FirstBatch {
 				checkingDelayedSeqNum := checkingDelayedCount - 1
 				l1DelayedAcc, err := r.delayedBridge.GetAccumulator(ctx, checkingDelayedSeqNum, currentHeight, common.Hash{})
 				if err != nil {
@@ -380,7 +380,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					return err
 				}
 			}
-			if checkingBatchCount > 0 {
+			if checkingBatchCount > 0 && checkingBatchCount > r.config().FirstBatch {
 				checkingBatchSeqNum := checkingBatchCount - 1
 				l1BatchAcc, err := r.sequencerInbox.GetAccumulator(ctx, checkingBatchSeqNum, currentHeight)
 				if err != nil {
@@ -606,6 +606,9 @@ func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
 	}
 	if delayedCount == 0 {
 		return new(big.Int).Set(r.firstMessageBlock), nil
+	}
+	if r.config().FirstBatch+1 >= delayedCount {
+		delayedCount = r.config().FirstBatch + 1
 	}
 	_, _, parentChainBlockNumber, err := r.tracker.GetDelayedMessageAccumulatorAndParentChainBlockNumber(delayedCount - 1)
 	if err != nil {
