@@ -329,7 +329,7 @@ func (t *InboxTracker) GetDelayedMessageBytes(seqNum uint64) ([]byte, error) {
 	return msg.Serialize()
 }
 
-func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardReorg bool) error {
+func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardReorg bool, firstBatchAllowed uint64) error {
 	if len(messages) == 0 {
 		return nil
 	}
@@ -381,6 +381,11 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 			return fmt.Errorf("previous delayed accumulator mismatch for message %v", seqNum)
 		}
 		nextAcc = message.AfterInboxAcc()
+		pos++
+		// Skip adding the message if it's before the first batch allowed.
+		if seqNum < firstBatchAllowed {
+			continue
+		}
 
 		delayedMsgKey := dbKey(rlpDelayedMessagePrefix, seqNum)
 
@@ -404,8 +409,6 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 				return err
 			}
 		}
-
-		pos++
 	}
 
 	return t.setDelayedCountReorgAndWriteBatch(batch, pos, true)
@@ -542,7 +545,7 @@ func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1Inco
 
 var delayedMessagesMismatch = errors.New("sequencer batch delayed messages missing or different")
 
-func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L1Interface, batches []*SequencerInboxBatch) error {
+func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L1Interface, batches []*SequencerInboxBatch, firstBatchAllowed uint64) error {
 	if len(batches) == 0 {
 		return nil
 	}
@@ -627,6 +630,10 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	lastBatchMeta := prevbatchmeta
 	batchMetas := make(map[uint64]BatchMetadata, len(batches))
 	for _, batch := range batches {
+		// Skip adding the batch if it's before the first batch allowed.
+		if batch.SequenceNumber < firstBatchAllowed {
+			continue
+		}
 		meta := BatchMetadata{
 			Accumulator:         batch.AfterInboxAcc,
 			DelayedMessageCount: batch.AfterDelayedCount,
