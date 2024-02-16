@@ -33,6 +33,7 @@ type InboxReaderConfig struct {
 	TargetMessagesRead  uint64        `koanf:"target-messages-read" reload:"hot"`
 	MaxBlocksToRead     uint64        `koanf:"max-blocks-to-read" reload:"hot"`
 	ReadMode            string        `koanf:"read-mode" reload:"hot"`
+	StartBlock          uint64        `koanf:"start-block" reload:"hot"`
 }
 
 type InboxReaderConfigFetcher func() *InboxReaderConfig
@@ -57,6 +58,7 @@ func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".target-messages-read", DefaultInboxReaderConfig.TargetMessagesRead, "if adjust-blocks-to-read is enabled, the target number of messages to read at once")
 	f.Uint64(prefix+".max-blocks-to-read", DefaultInboxReaderConfig.MaxBlocksToRead, "if adjust-blocks-to-read is enabled, the maximum number of blocks to read at once")
 	f.String(prefix+".read-mode", DefaultInboxReaderConfig.ReadMode, "mode to only read latest or safe or finalized L1 blocks. Enabling safe or finalized disables feed input and output. Defaults to latest. Takes string input, valid strings- latest, safe, finalized")
+	f.Uint64(prefix+".start-block", DefaultInboxReaderConfig.StartBlock, "block number to start reading from (0 for latest)")
 }
 
 var DefaultInboxReaderConfig = InboxReaderConfig{
@@ -68,6 +70,7 @@ var DefaultInboxReaderConfig = InboxReaderConfig{
 	TargetMessagesRead:  500,
 	MaxBlocksToRead:     2000,
 	ReadMode:            "latest",
+	StartBlock:          0,
 }
 
 var TestInboxReaderConfig = InboxReaderConfig{
@@ -601,6 +604,9 @@ func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
 		return nil, err
 	}
 	if delayedCount == 0 {
+		if r.config().StartBlock != 0 {
+			return new(big.Int).SetUint64(r.config().StartBlock), nil
+		}
 		return new(big.Int).Set(r.firstMessageBlock), nil
 	}
 	_, _, parentChainBlockNumber, err := r.tracker.GetDelayedMessageAccumulatorAndParentChainBlockNumber(delayedCount - 1)
