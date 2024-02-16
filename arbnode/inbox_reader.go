@@ -33,7 +33,7 @@ type InboxReaderConfig struct {
 	TargetMessagesRead  uint64        `koanf:"target-messages-read" reload:"hot"`
 	MaxBlocksToRead     uint64        `koanf:"max-blocks-to-read" reload:"hot"`
 	ReadMode            string        `koanf:"read-mode" reload:"hot"`
-	FirstBatch          uint64        `koanf:"start-batch" reload:"hot"`
+	FirstBatch          uint64        `koanf:"first-batch" reload:"hot"`
 }
 
 type InboxReaderConfigFetcher func() *InboxReaderConfig
@@ -58,7 +58,7 @@ func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".target-messages-read", DefaultInboxReaderConfig.TargetMessagesRead, "if adjust-blocks-to-read is enabled, the target number of messages to read at once")
 	f.Uint64(prefix+".max-blocks-to-read", DefaultInboxReaderConfig.MaxBlocksToRead, "if adjust-blocks-to-read is enabled, the maximum number of blocks to read at once")
 	f.String(prefix+".read-mode", DefaultInboxReaderConfig.ReadMode, "mode to only read latest or safe or finalized L1 blocks. Enabling safe or finalized disables feed input and output. Defaults to latest. Takes string input, valid strings- latest, safe, finalized")
-	f.Uint64(prefix+".start-batch", DefaultInboxReaderConfig.FirstBatch, "the first batch to save")
+	f.Uint64(prefix+".first-batch", DefaultInboxReaderConfig.FirstBatch, "the first batch to save")
 }
 
 var DefaultInboxReaderConfig = InboxReaderConfig{

@@ -383,7 +383,7 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 		nextAcc = message.AfterInboxAcc()
 		pos++
 		// Skip adding the message if it's before the first batch allowed.
-		if seqNum < firstBatchAllowed {
+		if seqNum != 0 && seqNum < firstBatchAllowed {
 			continue
 		}
 
@@ -631,7 +631,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	batchMetas := make(map[uint64]BatchMetadata, len(batches))
 	for _, batch := range batches {
 		// Skip adding the batch if it's before the first batch allowed.
-		if batch.SequenceNumber < firstBatchAllowed {
+		if batch.SequenceNumber != 0 && batch.SequenceNumber < firstBatchAllowed {
 			continue
 		}
 		meta := BatchMetadata{
