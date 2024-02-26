@@ -70,7 +70,7 @@ var DefaultInboxReaderConfig = InboxReaderConfig{
 	TargetMessagesRead:  500,
 	MaxBlocksToRead:     2000,
 	ReadMode:            "latest",
-	FirstBatch:          100,
+	FirstBatch:          0,
 }
 
 var TestInboxReaderConfig = InboxReaderConfig{
@@ -82,7 +82,7 @@ var TestInboxReaderConfig = InboxReaderConfig{
 	TargetMessagesRead:  500,
 	MaxBlocksToRead:     2000,
 	ReadMode:            "latest",
-	FirstBatch:          100,
+	FirstBatch:          0,
 }
 
 type InboxReader struct {
@@ -344,7 +344,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					return err
 				}
 			}
-			if checkingDelayedCount > 0 && checkingDelayedCount > r.config().FirstBatch {
+			if checkingDelayedCount > 0 {
 				checkingDelayedSeqNum := checkingDelayedCount - 1
 				l1DelayedAcc, err := r.delayedBridge.GetAccumulator(ctx, checkingDelayedSeqNum, currentHeight, common.Hash{})
 				if err != nil {
@@ -380,7 +380,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					return err
 				}
 			}
-			if checkingBatchCount > 0 && checkingBatchCount > r.config().FirstBatch {
+			if checkingBatchCount > 0 {
 				checkingBatchSeqNum := checkingBatchCount - 1
 				l1BatchAcc, err := r.sequencerInbox.GetAccumulator(ctx, checkingBatchSeqNum, currentHeight)
 				if err != nil {
@@ -462,7 +462,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				missingSequencer = false
 				reorgingSequencer = false
 				firstBatch := sequencerBatches[0]
-				if firstBatch.SequenceNumber > 0 {
+				if firstBatch.SequenceNumber > r.config().FirstBatch {
 					haveAcc, err := r.tracker.GetBatchAcc(firstBatch.SequenceNumber - 1)
 					if errors.Is(err, AccumulatorNotFoundErr) {
 						reorgingSequencer = true
@@ -476,6 +476,10 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					// Skip any batches we already have in the database
 					for len(sequencerBatches) > 0 {
 						batch := sequencerBatches[0]
+						if batch.SequenceNumber < r.config().FirstBatch {
+							sequencerBatches = sequencerBatches[1:]
+							continue
+						}
 						haveAcc, err := r.tracker.GetBatchAcc(batch.SequenceNumber)
 						if errors.Is(err, AccumulatorNotFoundErr) {
 							// This batch is new
@@ -508,7 +512,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				if err != nil {
 					return err
 				}
-				if beforeCount > 0 {
+				if beforeCount > r.config().FirstBatch {
 					haveAcc, err := r.tracker.GetDelayedAcc(beforeCount - 1)
 					if errors.Is(err, AccumulatorNotFoundErr) {
 						reorgingDelayed = true
@@ -516,6 +520,16 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 						return err
 					} else if haveAcc != beforeAcc {
 						reorgingDelayed = true
+					}
+					for len(delayedMessages) > 0 {
+						message := delayedMessages[0]
+						beforeCount, err := message.Message.Header.SeqNum()
+						if err != nil {
+							return err
+						}
+						if beforeCount < r.config().FirstBatch {
+							delayedMessages = delayedMessages[1:]
+						}
 					}
 				}
 			} else if missingDelayed && to.Cmp(currentHeight) >= 0 {
@@ -575,11 +589,11 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 }
 
 func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*SequencerInboxBatch, delayedMessages []*DelayedInboxMessage) (bool, error) {
-	err := r.tracker.AddDelayedMessages(delayedMessages, r.config().HardReorg, r.config().FirstBatch)
+	err := r.tracker.AddDelayedMessages(delayedMessages, r.config().HardReorg)
 	if err != nil {
 		return false, err
 	}
-	err = r.tracker.AddSequencerBatches(ctx, r.client, sequencerBatches, r.config().FirstBatch)
+	err = r.tracker.AddSequencerBatches(ctx, r.client, sequencerBatches)
 	if errors.Is(err, delayedMessagesMismatch) {
 		return true, nil
 	} else if err != nil {
@@ -606,9 +620,6 @@ func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
 	}
 	if delayedCount == 0 {
 		return new(big.Int).Set(r.firstMessageBlock), nil
-	}
-	if r.config().FirstBatch+1 >= delayedCount {
-		delayedCount = r.config().FirstBatch + 1
 	}
 	_, _, parentChainBlockNumber, err := r.tracker.GetDelayedMessageAccumulatorAndParentChainBlockNumber(delayedCount - 1)
 	if err != nil {

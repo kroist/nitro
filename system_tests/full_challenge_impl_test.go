@@ -177,7 +177,7 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 	if len(batches) == 0 {
 		Fatal(t, "batch not found after AddSequencerL2BatchFromOrigin")
 	}
-	err = l2Node.InboxTracker.AddSequencerBatches(ctx, backend, batches, 0)
+	err = l2Node.InboxTracker.AddSequencerBatches(ctx, backend, batches)
 	Require(t, err)
 	_, err = l2Node.InboxTracker.GetBatchMetadata(0)
 	Require(t, err, "failed to get batch metadata after adding batch:")

@@ -48,7 +48,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 			},
 		},
 	}
-	err = tracker.AddDelayedMessages([]*DelayedInboxMessage{initMsgDelayed, userDelayed}, false, 0)
+	err = tracker.AddDelayedMessages([]*DelayedInboxMessage{initMsgDelayed, userDelayed}, false)
 	Require(t, err)
 
 	serializedInitMsgBatch := make([]byte, 40)
@@ -97,7 +97,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		bridgeAddress:          [20]byte{},
 		serialized:             serializedUserMsgBatch,
 	}
-	err = tracker.AddSequencerBatches(ctx, nil, []*SequencerInboxBatch{initMsgBatch, userMsgBatch, emptyBatch}, 0)
+	err = tracker.AddSequencerBatches(ctx, nil, []*SequencerInboxBatch{initMsgBatch, userMsgBatch, emptyBatch})
 	Require(t, err)
 
 	// Reorg out the user delayed message
@@ -136,7 +136,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		bridgeAddress:          [20]byte{},
 		serialized:             serializedInitMsgBatch,
 	}
-	err = tracker.AddSequencerBatches(ctx, nil, []*SequencerInboxBatch{emptyBatch}, 0)
+	err = tracker.AddSequencerBatches(ctx, nil, []*SequencerInboxBatch{emptyBatch})
 	Require(t, err)
 
 	msgCount, err = streamer.GetMessageCount()
