@@ -521,15 +521,17 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					} else if haveAcc != beforeAcc {
 						reorgingDelayed = true
 					}
-					for len(delayedMessages) > 0 {
-						message := delayedMessages[0]
-						beforeCount, err := message.Message.Header.SeqNum()
-						if err != nil {
-							return err
-						}
-						if beforeCount < r.config().FirstBatch {
-							delayedMessages = delayedMessages[1:]
-						}
+				}
+				for len(delayedMessages) > 0 {
+					message := delayedMessages[0]
+					beforeCount, err := message.Message.Header.SeqNum()
+					if err != nil {
+						return err
+					}
+					if beforeCount < r.config().FirstBatch {
+						delayedMessages = delayedMessages[1:]
+					} else {
+						break
 					}
 				}
 			} else if missingDelayed && to.Cmp(currentHeight) >= 0 {

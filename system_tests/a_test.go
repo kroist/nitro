@@ -65,10 +65,10 @@ func TestA(t *testing.T) {
 		Require(t, err)
 		firstRoundBatches, err = seqInbox.LookupBatchesInRange(ctx, new(big.Int).SetUint64(startL1Block), new(big.Int).SetUint64(endL1Block))
 		Require(t, err)
-		batchCount, err := testClientB.ExecNode.HeadMessageNumber()
+		batchCount, err := testClientB.ConsensusNode.InboxTracker.GetBatchCount()
 		Require(t, err)
-		if uint64(len(firstRoundBatches)) > uint64(batchCount) {
-			//time.Sleep(1 * time.Second)
+		if uint64(len(firstRoundBatches)) > batchCount {
+			time.Sleep(1 * time.Second)
 		} else {
 			break
 		}
