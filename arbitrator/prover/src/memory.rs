@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    flat_merkle::{Merkle, MerkleType},
+    merkle::{Merkle, MerkleType},
     utils::Bytes32,
     value::{ArbValueType, Value},
 };
