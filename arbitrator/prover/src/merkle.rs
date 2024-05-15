@@ -8,7 +8,6 @@ use enum_iterator::Sequence;
 
 #[cfg(feature = "counters")]
 use enum_iterator::all;
-use itertools::Itertools;
 
 #[cfg(feature = "counters")]
 use std::sync::atomic::AtomicUsize;
@@ -291,7 +290,7 @@ impl Merkle {
         for layer_i in 1..self.depth {
             let dirty_i = layer_i - 1;
             let dirt = dirty_layers[dirty_i].clone();
-            for idx in dirt.iter().sorted() {
+            for idx in dirt.iter() {
                 let child_layer_size = self.calculate_layer_size(layer_i - 1) * 32;
                 let left_child_idx = idx << 1;
                 let right_child_idx = left_child_idx + 1;
