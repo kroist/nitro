@@ -10,8 +10,6 @@ use enum_iterator::Sequence;
 use enum_iterator::all;
 use itertools::Itertools;
 
-use std::cmp::max;
-
 #[cfg(feature = "counters")]
 use std::sync::atomic::AtomicUsize;
 
@@ -29,12 +27,9 @@ use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::{
     collections::HashSet,
-    convert::{TryFrom, TryInto},
+    convert::TryInto,
     sync::{Arc, Mutex},
 };
-
-#[cfg(feature = "rayon")]
-use rayon::prelude::*;
 
 mod zerohashes;
 
@@ -185,8 +180,9 @@ impl MerkleType {
 pub struct Merkle {
     ty: MerkleType,
     #[serde(with = "arc_mutex_sedre")]
-    layers: Arc<Mutex<Vec<Vec<Bytes32>>>>,
-    min_depth: usize,
+    tree: Arc<Mutex<Vec<u8>>>,
+    depth: usize,
+    layer0_len: Arc<Mutex<usize>>,
     #[serde(with = "arc_mutex_sedre")]
     dirty_layers: Arc<Mutex<Vec<HashSet<usize>>>>,
 }
@@ -212,27 +208,6 @@ const fn empty_hash_at(ty: MerkleType, layer_i: usize) -> &'static Bytes32 {
     }
 }
 
-#[inline]
-#[cfg(feature = "rayon")]
-fn new_layer(ty: MerkleType, layer: &Vec<Bytes32>, empty_hash: &'static Bytes32) -> Vec<Bytes32> {
-    let mut new_layer: Vec<Bytes32> = Vec::with_capacity(layer.len() >> 1);
-    let chunks = layer.par_chunks(2);
-    chunks
-        .map(|chunk| hash_node(ty, chunk[0], chunk.get(1).unwrap_or(empty_hash)))
-        .collect_into_vec(&mut new_layer);
-    new_layer
-}
-
-#[inline]
-#[cfg(not(feature = "rayon"))]
-fn new_layer(ty: MerkleType, layer: &Vec<Bytes32>, empty_hash: &'static Bytes32) -> Vec<Bytes32> {
-    let new_layer = layer
-        .chunks(2)
-        .map(|chunk| hash_node(ty, chunk[0], chunk.get(1).unwrap_or(empty_hash)))
-        .collect();
-    new_layer
-}
-
 impl Merkle {
     /// Creates a new Merkle tree with the given type and leaf hashes.
     /// The tree is built up to the minimum depth necessary to hold all the
@@ -249,56 +224,102 @@ impl Merkle {
         if hashes.is_empty() && min_depth == 0 {
             return Merkle::default();
         }
-        let mut depth = (hashes.len() as f64).log2().ceil() as usize;
-        depth = depth.max(min_depth);
-        let mut layers: Vec<Vec<Bytes32>> = Vec::with_capacity(depth);
-        layers.push(hashes);
+
+        let hash_count = hashes.len();
+        let mut target_depth = (hash_count as f64).log2().ceil() as usize;
+        target_depth = target_depth + 1;
+        target_depth = target_depth.max(min_depth);
+
+        // Calculate the total capacity needed for the tree
+        let total_capacity = calculate_total_capacity(target_depth, hash_count);
+
+        let mut tree = Vec::with_capacity(total_capacity);
+
+        // Append initial hashes to the tree
+        for hash in hashes.into_iter() {
+            tree.extend_from_slice(hash.as_slice());
+        }
+
+        let mut current_level_size = hash_count;
+        let mut next_level_offset = tree.len();
+        let mut depth = target_depth;
+
         let mut dirty_indices: Vec<HashSet<usize>> = Vec::with_capacity(depth);
         let mut layer_i = 0usize;
-        while layers.last().unwrap().len() > 1 || layers.len() < min_depth {
-            let layer = layers.last().unwrap();
-            let empty_hash = empty_hash_at(ty, layer_i);
+        while depth > 1 {
+            let mut i = next_level_offset - current_level_size * 32;
+            while i < next_level_offset {
+                let left = &tree[i..i + 32];
+                let right = if i + 32 < next_level_offset {
+                    &tree[i + 32..i + 64]
+                } else {
+                    empty_hash_at(ty, layer_i).as_slice()
+                };
 
-            let new_layer = new_layer(ty, layer, empty_hash);
-            dirty_indices.push(HashSet::with_capacity(new_layer.len()));
-            layers.push(new_layer);
+                let parent_hash = hash_node(ty, left, right);
+                tree.extend(parent_hash.as_slice());
+
+                i += 64;
+            }
+
+            current_level_size = (current_level_size + 1) / 2;
+            dirty_indices.push(HashSet::with_capacity(current_level_size));
+            next_level_offset = tree.len();
+            depth = depth.saturating_sub(1);
             layer_i += 1;
         }
         let dirty_layers = Arc::new(Mutex::new(dirty_indices));
         Merkle {
             ty,
-            layers: Arc::new(Mutex::new(layers)),
-            min_depth,
+            tree: Arc::new(Mutex::new(tree)),
+            depth: target_depth,
+            layer0_len: Arc::new(Mutex::new(hash_count)),
             dirty_layers,
         }
     }
 
+    #[inline(never)]
     fn rehash(&self) {
         let dirty_layers = &mut self.dirty_layers.lock().unwrap();
         if dirty_layers.is_empty() || dirty_layers[0].is_empty() {
             return;
         }
-        let layers = &mut self.layers.lock().unwrap();
-        for layer_i in 1..layers.len() {
+        let mut tree = self.tree.lock().unwrap();
+        let mut child_layer_start = 0usize;
+        let mut layer_start = self.calculate_layer_size(0) * 32;
+        let mut layer_size = self.calculate_layer_size(1) * 32;
+        for layer_i in 1..self.depth {
             let dirty_i = layer_i - 1;
             let dirt = dirty_layers[dirty_i].clone();
             for idx in dirt.iter().sorted() {
+                let child_layer_size = self.calculate_layer_size(layer_i - 1) * 32;
                 let left_child_idx = idx << 1;
                 let right_child_idx = left_child_idx + 1;
-                let left = layers[layer_i - 1][left_child_idx];
-                let right = layers[layer_i - 1]
-                    .get(right_child_idx)
-                    .unwrap_or(empty_hash_at(self.ty, layer_i - 1));
-                let new_hash = hash_node(self.ty, left, right);
-                if *idx < layers[layer_i].len() {
-                    layers[layer_i][*idx] = new_hash;
+                let left = get_node(&tree, child_layer_start, left_child_idx);
+                let right = if child_layer_start + right_child_idx * 32
+                    < child_layer_start + child_layer_size
+                {
+                    get_node(&tree, child_layer_start, right_child_idx)
                 } else {
-                    layers[layer_i].push(new_hash);
+                    *empty_hash_at(self.ty, layer_i - 1)
+                };
+                let new_hash = hash_node(self.ty, left, right);
+                let layer_idx = layer_start + idx * 32;
+                if layer_idx < layer_start + layer_size {
+                    tree[layer_idx..layer_idx + 32].copy_from_slice(new_hash.as_slice());
+                } else {
+                    panic!(
+                        "Index out of bounds: {} >= {}",
+                        layer_idx,
+                        layer_start + layer_size
+                    );
                 }
-                if layer_i < layers.len() - 1 {
+                if layer_i < self.depth - 1 {
                     dirty_layers[dirty_i + 1].insert(idx >> 1);
                 }
             }
+            (child_layer_start, layer_start) = (layer_start, layer_start + layer_size);
+            layer_size = self.calculate_layer_size(layer_i + 1) * 32;
             dirty_layers[dirty_i].clear();
         }
     }
@@ -306,39 +327,40 @@ impl Merkle {
     pub fn root(&self) -> Bytes32 {
         #[cfg(feature = "counters")]
         ROOT_COUNTERS[&self.ty].fetch_add(1, Ordering::Relaxed);
-        self.rehash();
-        if let Some(layer) = self.layers.lock().unwrap().last() {
-            assert_eq!(layer.len(), 1);
-            layer[0]
-        } else {
-            Bytes32::default()
+        if self.is_empty() {
+            return *empty_hash_at(self.ty, 0);
         }
+        self.rehash();
+        let tree = self.tree.lock().unwrap();
+        let len = tree.len();
+        let mut root = [0u8; 32];
+        root.copy_from_slice(&tree[len - 32..len]);
+        root.into()
     }
 
     // Returns the total number of leaves the tree can hold.
     #[inline]
     fn capacity(&self) -> usize {
-        let layers = self.layers.lock().unwrap();
-        if layers.is_empty() {
+        let tree = self.tree.lock().unwrap();
+        if tree.is_empty() && self.depth == 0 {
             return 0;
         }
         let base: usize = 2;
-        base.pow((layers.len() - 1).try_into().unwrap())
+        base.pow((self.depth - 1).try_into().unwrap())
     }
 
     // Returns the number of leaves in the tree.
     pub fn len(&self) -> usize {
-        self.layers.lock().unwrap()[0].len()
+        self.calculate_layer_size(0)
     }
 
     pub fn is_empty(&self) -> bool {
-        let layers = self.layers.lock().unwrap();
-        layers.is_empty() || layers[0].is_empty()
+        self.tree.lock().unwrap().is_empty()
     }
 
     #[must_use]
     pub fn prove(&self, idx: usize) -> Option<Vec<u8>> {
-        if self.layers.lock().unwrap().is_empty() || idx >= self.layers.lock().unwrap()[0].len() {
+        if self.is_empty() || idx >= self.len() {
             return None;
         }
         Some(self.prove_any(idx))
@@ -346,22 +368,36 @@ impl Merkle {
 
     /// creates a merkle proof regardless of if the leaf has content
     #[must_use]
-    pub fn prove_any(&self, mut idx: usize) -> Vec<u8> {
+    pub fn prove_any(&self, idx: usize) -> Vec<u8> {
         self.rehash();
-        let layers = self.layers.lock().unwrap();
-        let mut proof = vec![u8::try_from(layers.len() - 1).unwrap()];
-        for (layer_i, layer) in layers.iter().enumerate() {
-            if layer_i == layers.len() - 1 {
+
+        let mut proof = Vec::with_capacity(self.depth * 32);
+        let mut node_index = idx;
+        let mut layer_start = 0;
+
+        for depth in 0.. {
+            let layer_size = self.calculate_layer_size(depth);
+            if layer_size == 0 {
                 break;
             }
-            let counterpart = idx ^ 1;
-            proof.extend(
-                layer
-                    .get(counterpart)
-                    .cloned()
-                    .unwrap_or_else(|| *empty_hash_at(self.ty, layer_i)),
-            );
-            idx >>= 1;
+
+            let sibling_index = if node_index % 2 == 0 {
+                node_index + 1
+            } else {
+                node_index - 1
+            };
+            if sibling_index < layer_size {
+                proof.extend(get_node(
+                    &self.tree.lock().unwrap(),
+                    layer_start,
+                    sibling_index,
+                ));
+            } else {
+                proof.extend(*empty_hash_at(self.ty, depth));
+            }
+
+            node_index >>= 1;
+            layer_start += layer_size * 32;
         }
         proof
     }
@@ -369,17 +405,17 @@ impl Merkle {
     /// Adds a new leaf to the merkle
     /// Currently O(n) in the number of leaves (could be log(n))
     pub fn push_leaf(&mut self, leaf: Bytes32) {
-        let mut leaves = self.layers.lock().unwrap().swap_remove(0);
+        let mut leaves = self.leaves();
         leaves.push(leaf);
-        *self = Self::new_advanced(self.ty, leaves, self.min_depth);
+        *self = Self::new_advanced(self.ty, leaves, self.depth);
     }
 
     /// Removes the rightmost leaf from the merkle
     /// Currently O(n) in the number of leaves (could be log(n))
     pub fn pop_leaf(&mut self) {
-        let mut leaves = self.layers.lock().unwrap().swap_remove(0);
+        let mut leaves = self.leaves();
         leaves.pop();
-        *self = Self::new_advanced(self.ty, leaves, self.min_depth);
+        *self = Self::new_advanced(self.ty, leaves, self.depth);
     }
 
     // Sets the leaf at the given index to the given hash.
@@ -387,11 +423,14 @@ impl Merkle {
     pub fn set(&self, idx: usize, hash: Bytes32) {
         #[cfg(feature = "counters")]
         SET_COUNTERS[&self.ty].fetch_add(1, Ordering::Relaxed);
-        let mut layers = self.layers.lock().unwrap();
-        if layers[0][idx] == hash {
+        if idx >= self.len() {
+            panic!("index {} out of bounds {}", idx, self.len());
+        }
+        let mut tree = self.tree.lock().unwrap();
+        if tree[idx * 32..idx * 32 + 32].eq(hash.as_slice()) {
             return;
         }
-        layers[0][idx] = hash;
+        tree[idx * 32..idx * 32 + 32].copy_from_slice(hash.as_slice());
         self.dirty_layers.lock().unwrap()[0].insert(idx >> 1);
     }
 
@@ -402,22 +441,88 @@ impl Merkle {
         #[cfg(feature = "counters")]
         RESIZE_COUNTERS[&self.ty].fetch_add(1, Ordering::Relaxed);
         if new_len > self.capacity() {
-            return Err(
-                "Cannot resize to a length greater than the capacity of the tree.".to_owned(),
+            return Err(format!(
+                "Cannot resize to a length ({}) greater than the capacity ({})) of the tree.",
+                new_len,
+                self.capacity()
+            ));
+        }
+
+        let mut new_tree = Vec::with_capacity(calculate_total_capacity(self.depth, new_len));
+        let mut tree = self.tree.lock().unwrap();
+        let mut layer_offset = 0;
+        let mut new_next_layer_offset = new_len * 32;
+        for layer_i in 0..self.depth {
+            new_tree.extend_from_slice(
+                &tree[layer_offset..(layer_offset + self.calculate_layer_size(layer_i) * 32)],
             );
+            while new_tree.len() < new_next_layer_offset {
+                new_tree.extend_from_slice(empty_hash_at(self.ty, layer_i).as_slice());
+            }
+            layer_offset += self.calculate_layer_size(layer_i) * 32;
+            new_next_layer_offset =
+                new_tree.len() + calculate_layer_size(self.depth, new_len, layer_i + 1) * 32;
         }
-        let mut layers = self.layers.lock().unwrap();
-        let mut layer_size = new_len;
-        for (layer_i, layer) in layers.iter_mut().enumerate() {
-            layer.resize(layer_size, *empty_hash_at(self.ty, layer_i));
-            layer_size = max(layer_size >> 1, 1);
-        }
-        let start = layers[0].len();
+        let start = self.len();
         for i in start..new_len {
-            self.dirty_layers.lock().unwrap()[0].insert(i);
+            self.dirty_layers.lock().unwrap()[0].insert(i >> 1);
         }
-        Ok(layers[0].len())
+        *tree = new_tree;
+        *self.layer0_len.lock().unwrap() = new_len;
+        Ok(self.len())
     }
+
+    // Helper function to get the leaves of the tree
+    #[inline(always)]
+    fn leaves(&self) -> Vec<Bytes32> {
+        let tree = self.tree.lock().unwrap();
+        let mut leaves = Vec::with_capacity(*self.layer0_len.lock().unwrap());
+        for i in 0..*self.layer0_len.lock().unwrap() {
+            let start = i * 32;
+            let mut leaf = [0u8; 32];
+            leaf.copy_from_slice(&tree[start..start + 32]);
+            leaves.push(leaf.into());
+        }
+        leaves
+    }
+
+    // Helper function to calculate the size of a given layer
+    #[inline(always)]
+    fn calculate_layer_size(&self, layer: usize) -> usize {
+        calculate_layer_size(self.depth, *self.layer0_len.lock().unwrap(), layer)
+    }
+}
+
+// Helper function to get a node from the tree
+#[inline(always)]
+fn get_node(tree: &Vec<u8>, layer_start: usize, index: usize) -> Bytes32 {
+    let start = layer_start + index * 32;
+    let mut node = [0u8; 32];
+    node.copy_from_slice(&tree[start..start + 32]);
+    node.into()
+}
+
+fn calculate_layer_size(depth: usize, layer0_len: usize, layer: usize) -> usize {
+    if layer >= depth {
+        return 0;
+    }
+    let mut size = layer0_len;
+    for _ in 0..layer {
+        size = (size + 1) / 2;
+    }
+    size
+}
+
+fn calculate_total_capacity(depth: usize, layer0_len: usize) -> usize {
+    let mut total_capacity = layer0_len * 32;
+    let mut current_level_size = layer0_len;
+    let mut depth = depth;
+    while depth > 1 {
+        current_level_size = (current_level_size + 1) / 2;
+        total_capacity += current_level_size * 32;
+        depth = depth.saturating_sub(1);
+    }
+    total_capacity
 }
 
 impl PartialEq for Merkle {
@@ -564,6 +669,37 @@ fn emit_memory_zerohashes() {
 }
 
 #[test]
+fn calculate_layer_sizes() {
+    let expect = 128usize;
+    let actual = calculate_layer_size(11, 1024, 3);
+    assert_eq!(expect, actual);
+
+    let expect = 1usize;
+    let actual = calculate_layer_size(11, 1024, 10);
+    assert_eq!(expect, actual);
+
+    let expect = 3usize;
+    let actual = calculate_layer_size(4, 6, 1);
+    assert_eq!(expect, actual);
+
+    let expect = 3usize;
+    let actual = calculate_layer_size(4, 5, 1);
+    assert_eq!(expect, actual);
+
+    let expect = 5usize;
+    let actual = calculate_layer_size(4, 5, 0);
+    assert_eq!(expect, actual);
+
+    let expect = 2usize;
+    let actual = calculate_layer_size(4, 5, 2);
+    assert_eq!(expect, actual);
+
+    let expect = 2usize;
+    let actual = calculate_layer_size(4, 4, 1);
+    assert_eq!(expect, actual);
+}
+
+#[test]
 fn serialization_roundtrip() {
     let merkle = Merkle::new_advanced(MerkleType::Value, vec![Bytes32::from([1; 32])], 4);
     merkle.resize(4).expect("resize failed");
@@ -574,7 +710,7 @@ fn serialization_roundtrip() {
 }
 
 #[test]
-#[should_panic(expected = "index out of bounds")]
+#[should_panic(expected = "index 2 out of bounds 2")]
 fn set_with_bad_index_panics() {
     let merkle = Merkle::new(
         MerkleType::Value,
