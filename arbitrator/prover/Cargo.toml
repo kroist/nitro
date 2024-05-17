@@ -55,7 +55,7 @@ name = "prover"
 crate-type = ["staticlib", "lib"]
 
 [features]
-default = ["native", "rayon", "singlepass_rayon", "deadlocks"]
+default = ["native", "rayon", "singlepass_rayon"]
 counters = []
 deadlocks = ["parking_lot/deadlock_detection"]
 native = ["dep:wasmer", "dep:wasmer-compiler-singlepass", "brotli/wasmer_traits", "dep:c-kzg"]
