@@ -5,7 +5,9 @@ package server_api
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -149,4 +151,17 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 		valInput.UserWasms[moduleHash] = decInfo
 	}
 	return valInput, nil
+}
+
+func (i *InputJSON) WriteToFile() error {
+	emptyPrefix := ""
+	fourSpaceIndent := "    "
+	contents, err := json.MarshalIndent(i, emptyPrefix, fourSpaceIndent)
+	if err != nil {
+		return err
+	}
+	if err = os.WriteFile(fmt.Sprintf("block_inputs_%d.json", i.Id), contents, 0644); err != nil {
+		return err
+	}
+	return nil
 }

@@ -9,6 +9,7 @@ use enum_iterator::Sequence;
 #[cfg(feature = "counters")]
 use enum_iterator::all;
 use itertools::Itertools;
+use parking_lot::Mutex;
 
 use std::cmp::max;
 
@@ -30,7 +31,7 @@ use sha3::Keccak256;
 use std::{
     collections::HashSet,
     convert::{TryFrom, TryInto},
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 #[cfg(feature = "rayon")]
@@ -274,11 +275,11 @@ impl Merkle {
     }
 
     fn rehash(&self) {
-        let dirty_layers = &mut self.dirty_layers.lock().unwrap();
+        let dirty_layers = &mut self.dirty_layers.lock();
         if dirty_layers.is_empty() || dirty_layers[0].is_empty() {
             return;
         }
-        let layers = &mut self.layers.lock().unwrap();
+        let layers = &mut self.layers.lock();
         for layer_i in 1..layers.len() {
             let dirty_i = layer_i - 1;
             let dirt = dirty_layers[dirty_i].clone();
@@ -307,7 +308,7 @@ impl Merkle {
         #[cfg(feature = "counters")]
         ROOT_COUNTERS[&self.ty].fetch_add(1, Ordering::Relaxed);
         self.rehash();
-        if let Some(layer) = self.layers.lock().unwrap().last() {
+        if let Some(layer) = self.layers.lock().last() {
             assert_eq!(layer.len(), 1);
             layer[0]
         } else {
@@ -318,7 +319,7 @@ impl Merkle {
     // Returns the total number of leaves the tree can hold.
     #[inline]
     fn capacity(&self) -> usize {
-        let layers = self.layers.lock().unwrap();
+        let layers = self.layers.lock();
         if layers.is_empty() {
             return 0;
         }
@@ -328,17 +329,17 @@ impl Merkle {
 
     // Returns the number of leaves in the tree.
     pub fn len(&self) -> usize {
-        self.layers.lock().unwrap()[0].len()
+        self.layers.lock()[0].len()
     }
 
     pub fn is_empty(&self) -> bool {
-        let layers = self.layers.lock().unwrap();
+        let layers = self.layers.lock();
         layers.is_empty() || layers[0].is_empty()
     }
 
     #[must_use]
     pub fn prove(&self, idx: usize) -> Option<Vec<u8>> {
-        if self.layers.lock().unwrap().is_empty() || idx >= self.layers.lock().unwrap()[0].len() {
+        if self.layers.lock().is_empty() || idx >= self.layers.lock()[0].len() {
             return None;
         }
         Some(self.prove_any(idx))
@@ -348,7 +349,7 @@ impl Merkle {
     #[must_use]
     pub fn prove_any(&self, mut idx: usize) -> Vec<u8> {
         self.rehash();
-        let layers = self.layers.lock().unwrap();
+        let layers = self.layers.lock();
         let mut proof = vec![u8::try_from(layers.len() - 1).unwrap()];
         for (layer_i, layer) in layers.iter().enumerate() {
             if layer_i == layers.len() - 1 {
@@ -369,7 +370,7 @@ impl Merkle {
     /// Adds a new leaf to the merkle
     /// Currently O(n) in the number of leaves (could be log(n))
     pub fn push_leaf(&mut self, leaf: Bytes32) {
-        let mut leaves = self.layers.lock().unwrap().swap_remove(0);
+        let mut leaves = self.layers.lock().swap_remove(0);
         leaves.push(leaf);
         *self = Self::new_advanced(self.ty, leaves, self.min_depth);
     }
@@ -377,7 +378,7 @@ impl Merkle {
     /// Removes the rightmost leaf from the merkle
     /// Currently O(n) in the number of leaves (could be log(n))
     pub fn pop_leaf(&mut self) {
-        let mut leaves = self.layers.lock().unwrap().swap_remove(0);
+        let mut leaves = self.layers.lock().swap_remove(0);
         leaves.pop();
         *self = Self::new_advanced(self.ty, leaves, self.min_depth);
     }
@@ -387,12 +388,12 @@ impl Merkle {
     pub fn set(&self, idx: usize, hash: Bytes32) {
         #[cfg(feature = "counters")]
         SET_COUNTERS[&self.ty].fetch_add(1, Ordering::Relaxed);
-        let mut layers = self.layers.lock().unwrap();
+        let mut layers = self.layers.lock();
         if layers[0][idx] == hash {
             return;
         }
         layers[0][idx] = hash;
-        self.dirty_layers.lock().unwrap()[0].insert(idx >> 1);
+        self.dirty_layers.lock()[0].insert(idx >> 1);
     }
 
     /// Resizes the number of leaves the tree can hold.
@@ -406,7 +407,7 @@ impl Merkle {
                 "Cannot resize to a length greater than the capacity of the tree.".to_owned(),
             );
         }
-        let mut layers = self.layers.lock().unwrap();
+        let mut layers = self.layers.lock();
         let mut layer_size = new_len;
         for (layer_i, layer) in layers.iter_mut().enumerate() {
             layer.resize(layer_size, *empty_hash_at(self.ty, layer_i));
@@ -414,7 +415,7 @@ impl Merkle {
         }
         let start = layers[0].len();
         for i in start..new_len {
-            self.dirty_layers.lock().unwrap()[0].insert(i);
+            self.dirty_layers.lock()[0].insert(i);
         }
         Ok(layers[0].len())
     }
@@ -429,27 +430,23 @@ impl PartialEq for Merkle {
 impl Eq for Merkle {}
 
 pub mod arc_mutex_sedre {
-    pub fn serialize<S, T>(
-        data: &std::sync::Arc<std::sync::Mutex<T>>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
+    use parking_lot::Mutex;
+    use std::sync::Arc;
+
+    pub fn serialize<S, T>(data: &Arc<Mutex<T>>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
         T: serde::Serialize,
     {
-        data.lock().unwrap().serialize(serializer)
+        data.lock().serialize(serializer)
     }
 
-    pub fn deserialize<'de, D, T>(
-        deserializer: D,
-    ) -> Result<std::sync::Arc<std::sync::Mutex<T>>, D::Error>
+    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<Arc<Mutex<T>>, D::Error>
     where
         D: serde::Deserializer<'de>,
         T: serde::Deserialize<'de>,
     {
-        Ok(std::sync::Arc::new(std::sync::Mutex::new(T::deserialize(
-            deserializer,
-        )?)))
+        Ok(Arc::new(Mutex::new(T::deserialize(deserializer)?)))
     }
 }
 

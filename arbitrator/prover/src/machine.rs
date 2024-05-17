@@ -28,6 +28,8 @@ use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use lazy_static::lazy_static;
 use num::{traits::PrimInt, Zero};
+#[cfg(feature = "deadlocks")]
+use parking_lot::deadlock;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sha3::Keccak256;
@@ -48,6 +50,8 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+#[cfg(feature = "deadlocks")]
+use std::{thread, time::Duration};
 
 use wasmer_types::FunctionIndex;
 use wasmparser::{DataKind, ElementItems, ElementKind, Operator, RefType, TableType};
@@ -990,6 +994,8 @@ pub struct Machine {
     initial_hash: Bytes32,
     context: u64,
     debug_info: bool, // Not part of machine hash
+    #[cfg(feature = "deadlocks")]
+    deadlock_detection_running: bool,
 }
 
 type FrameStackHash = Bytes32;
@@ -1557,12 +1563,14 @@ impl Machine {
             initial_hash: Bytes32::default(),
             context: 0,
             debug_info,
+            #[cfg(feature = "deadlocks")]
+            deadlock_detection_running: false,
         };
         mach.initial_hash = mach.hash();
         Ok(mach)
     }
 
-    pub fn new_from_wavm(wavm_binary: &Path, always_merkleize: bool) -> Result<Machine> {
+    pub fn new_from_wavm(wavm_binary: &Path, _always_merkleize: bool) -> Result<Machine> {
         let mut modules: Vec<Module> = {
             let compressed = std::fs::read(wavm_binary)?;
             let Ok(modules) = brotli::decompress(&compressed, Dictionary::Empty) else {
@@ -1613,6 +1621,8 @@ impl Machine {
             initial_hash: Bytes32::default(),
             context: 0,
             debug_info: false,
+            #[cfg(feature = "deadlocks")]
+            deadlock_detection_running: false,
         };
         mach.initial_hash = mach.hash();
         Ok(mach)
@@ -1894,11 +1904,38 @@ impl Machine {
         self.steps
     }
 
+    #[cfg(feature = "deadlocks")]
+    fn enable_deadlock_detection(&mut self) {
+        if self.deadlock_detection_running {
+            return;
+        }
+        // Create a background thread which checks for deadlocks every 10s
+        thread::spawn(move || loop {
+            thread::sleep(Duration::from_secs(10));
+            let deadlocks = deadlock::check_deadlock();
+            if deadlocks.is_empty() {
+                println!("No deadlocks detected");
+                continue;
+            }
+
+            println!("{} deadlocks detected", deadlocks.len());
+            for (i, threads) in deadlocks.iter().enumerate() {
+                println!("Deadlock #{}", i);
+                for t in threads {
+                    println!("{:#?}", t.backtrace());
+                }
+            }
+        });
+        self.deadlock_detection_running = true;
+    }
+
     #[cfg(feature = "native")]
     pub fn step_n(&mut self, n: u64) -> Result<()> {
         if self.is_halted() {
             return Ok(());
         }
+        #[cfg(feature = "deadlocks")]
+        self.enable_deadlock_detection();
         let (mut value_stack, mut frame_stack) = match self.thread_state {
             ThreadState::Main => (&mut self.value_stacks[0], &mut self.frame_stacks[0]),
             ThreadState::CoThread(_) => (
