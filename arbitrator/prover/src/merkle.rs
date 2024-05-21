@@ -160,6 +160,12 @@ impl MerkleType {
     }
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct Layers {
+    data: Vec<Vec<Bytes32>>,
+    dirt: Vec<HashSet<usize>>,
+}
+
 /// A Merkle tree with a fixed number of layers
 ///
 /// https://en.wikipedia.org/wiki/Merkle_tree
@@ -267,7 +273,10 @@ impl Merkle {
             depth = depth.saturating_sub(1);
             layer_i += 1;
         }
-        let dirty_layers = Arc::new(Mutex::new(dirty_indices));
+        let layers = Arc::new(Mutex::new(Layers {
+            data: layers,
+            dirt: dirty_indices,
+        }));
         Merkle {
             ty,
             tree: Arc::new(Mutex::new(tree)),
@@ -279,8 +288,8 @@ impl Merkle {
 
     #[inline(never)]
     fn rehash(&self) {
-        let dirty_layers = &mut self.dirty_layers.lock().unwrap();
-        if dirty_layers.is_empty() || dirty_layers[0].is_empty() {
+        let layers = &mut self.layers.lock().unwrap();
+        if layers.dirt.is_empty() || layers.dirt[0].is_empty() {
             return;
         }
         let mut tree = self.tree.lock().unwrap();
