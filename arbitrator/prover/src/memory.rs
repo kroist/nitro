@@ -8,15 +8,10 @@ use crate::{
 use arbutil::Bytes32;
 use digest::Digest;
 use eyre::{bail, ErrReport, Result};
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
-use std::{
-    borrow::Cow,
-    collections::HashSet,
-    convert::TryFrom,
-    ops::Deref,
-    sync::{Arc, Mutex},
-};
+use std::{borrow::Cow, collections::HashSet, convert::TryFrom, sync::Arc};
 
 #[cfg(feature = "counters")]
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -111,8 +106,7 @@ impl PartialEq for Memory {
         self.buffer == other.buffer
             && self.merkle == other.merkle
             && self.max_size == other.max_size
-            && self.dirty_indices.lock().unwrap().deref()
-                == other.dirty_indices.lock().unwrap().deref()
+            && *self.dirty_indices.lock() == *other.dirty_indices.lock()
     }
 }
 
@@ -139,11 +133,11 @@ impl Memory {
 
     pub fn merkelize(&self) -> Cow<'_, Merkle> {
         if let Some(m) = &self.merkle {
-            for idx in self.dirty_indices.lock().unwrap().iter() {
+            for idx in self.dirty_indices.lock().iter() {
                 let leaf_idx = idx / Self::LEAF_SIZE;
                 m.set(leaf_idx, hash_leaf(self.get_leaf_data(leaf_idx)));
             }
-            self.dirty_indices.lock().unwrap().clear();
+            self.dirty_indices.lock().clear();
             return Cow::Borrowed(m);
         }
         // Round the size up to 8 byte long leaves, then round up to the next power of two number of leaves
@@ -167,7 +161,7 @@ impl Memory {
         if size < leaves {
             m.resize(leaves).expect("Couldn't resize merkle tree");
         }
-        self.dirty_indices.lock().unwrap().clear();
+        self.dirty_indices.lock().clear();
         Cow::Owned(m)
     }
 
@@ -276,8 +270,9 @@ impl Memory {
         let end_idx = end_idx as usize;
         let buf = value.to_le_bytes();
         self.buffer[idx..end_idx].copy_from_slice(&buf[..bytes.into()]);
-        self.dirty_indices.lock().unwrap().insert(idx);
-        self.dirty_indices.lock().unwrap().insert(end_idx - 1);
+
+        self.dirty_indices.lock().insert(idx);
+        self.dirty_indices.lock().insert(end_idx - 1);
 
         true
     }
@@ -296,7 +291,7 @@ impl Memory {
         let idx = idx as usize;
         let end_idx = end_idx as usize;
         self.buffer[idx..end_idx].copy_from_slice(value);
-        self.dirty_indices.lock().unwrap().insert(idx);
+        self.dirty_indices.lock().insert(idx);
 
         true
     }

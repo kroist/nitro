@@ -106,12 +106,17 @@ func (e *executionRun) GetLeavesWithStepSize(fromBatch, machineStartIndex, stepS
 			// The absolute opcode position the machine should be in after stepping.
 			position := machineStartIndex + stepSize*(numIterations+1)
 
+			if numIterations%1000 == 0 {
+				fmt.Println("Iter = ", numIterations, "to", position, "elapsed", time.Since(start))
+			}
 			// Advance the machine in step size increments.
 			fmt.Println("Iter = ", numIterations, "start", machineStartIndex, "to", position, "elapsed", time.Since(start))
 			if err := machine.Step(ctx, stepSize); err != nil {
 				return nil, fmt.Errorf("failed to step machine to position %d: %w", position, err)
 			}
-			fmt.Println("Done stepping")
+			if numIterations%1000 == 0 {
+				fmt.Println("Done stepping")
+			}
 			if numIterations%logInterval == 0 || numIterations == numDesiredLeaves-1 {
 				progressPercent := (float64(numIterations+1) / float64(numDesiredLeaves)) * 100
 				log.Info(
@@ -141,7 +146,9 @@ func (e *executionRun) GetLeavesWithStepSize(fromBatch, machineStartIndex, stepS
 				stateRoots = append(stateRoots, hash)
 				break
 			}
-			fmt.Println("Before wrong pos check")
+			if numIterations%1000 == 0 {
+				fmt.Println("Before wrong pos check")
+			}
 			// Otherwise, if the position and machine step mismatch and the machine is running, something went wrong.
 			if position != machineStep {
 				machineRunning := machine.IsRunning()
@@ -149,12 +156,18 @@ func (e *executionRun) GetLeavesWithStepSize(fromBatch, machineStartIndex, stepS
 					return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machineStep)
 				}
 			}
-			fmt.Println("Appending to state roots, computing machine hash")
+			if numIterations%1000 == 0 {
+				fmt.Println("Appending to state roots, computing machine hash")
+			}
 			start2 := time.Now()
 			machHash := machine.Hash()
-			fmt.Println("Computed machine hash in", time.Since(start2))
+			if numIterations%1000 == 0 {
+				fmt.Println("Computed machine hash in", time.Since(start2))
+			}
 			stateRoots = append(stateRoots, machHash)
-			fmt.Println("Appended to state roots")
+			if numIterations%1000 == 0 {
+				fmt.Println("Appended to state roots")
+			}
 		}
 		log.Info(
 			"Successfully finished computing the data needed for opening a subchallenge",
