@@ -61,8 +61,8 @@ import (
 // 32 Mb of state roots in memory at once.
 var (
 	blockChallengeLeafHeight     = uint64(1 << 5) // 32
-	bigStepChallengeLeafHeight   = uint64(1 << 18)
-	smallStepChallengeLeafHeight = uint64(1 << 24)
+	bigStepChallengeLeafHeight   = uint64(1 << 19)
+	smallStepChallengeLeafHeight = uint64(1 << 23)
 )
 
 func TestChallengeProtocolBOLD(t *testing.T) {
@@ -178,7 +178,6 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		[]l2stateprovider.Height{
 			l2stateprovider.Height(blockChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
 		"good",
@@ -190,7 +189,6 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		"/tmp/evil",
 		[]l2stateprovider.Height{
 			l2stateprovider.Height(blockChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},

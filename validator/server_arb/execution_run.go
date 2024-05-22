@@ -107,7 +107,7 @@ func (e *executionRun) GetLeavesWithStepSize(fromBatch, machineStartIndex, stepS
 			position := machineStartIndex + stepSize*(numIterations+1)
 
 			// Advance the machine in step size increments.
-			fmt.Println("Iter = ", numIterations, "to", position, "elapsed", time.Since(start))
+			fmt.Println("Iter = ", numIterations, "start", machineStartIndex, "to", position, "elapsed", time.Since(start))
 			if err := machine.Step(ctx, stepSize); err != nil {
 				return nil, fmt.Errorf("failed to step machine to position %d: %w", position, err)
 			}
