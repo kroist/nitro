@@ -209,7 +209,6 @@ func (e *executionRun) intermediateGetStepAt(ctx context.Context, position uint6
 		if machineRunning || machineStep > position {
 			return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machine.GetStepCount())
 		}
-
 	}
 	result := &validator.MachineStepResult{
 		Position:    machineStep,
