@@ -372,7 +372,6 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		challengemanager.WithAddress(l1info.GetDefaultTransactOpts("Asserter", ctx).From),
 		challengemanager.WithAssertionPostingInterval(time.Second*30),
 		challengemanager.WithAssertionScanningInterval(time.Second),
-		challengemanager.WithEdgeTrackerWakeInterval(time.Second*2),
 		challengemanager.WithAvgBlockCreationTime(time.Second),
 	)
 	Require(t, err)
@@ -387,7 +386,6 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		challengemanager.WithAddress(l1info.GetDefaultTransactOpts("EvilAsserter", ctx).From),
 		challengemanager.WithAssertionPostingInterval(time.Second*30),
 		challengemanager.WithAssertionScanningInterval(time.Second),
-		challengemanager.WithEdgeTrackerWakeInterval(time.Second*2),
 		challengemanager.WithAvgBlockCreationTime(time.Second),
 	)
 	Require(t, err)
