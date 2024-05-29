@@ -61,8 +61,8 @@ import (
 // 32 Mb of state roots in memory at once.
 var (
 	blockChallengeLeafHeight     = uint64(1 << 5) // 32
-	bigStepChallengeLeafHeight   = uint64(1 << 19)
-	smallStepChallengeLeafHeight = uint64(1 << 23)
+	bigStepChallengeLeafHeight   = uint64(1 << 14)
+	smallStepChallengeLeafHeight = uint64(1 << 14)
 )
 
 func TestChallengeProtocolBOLD(t *testing.T) {
@@ -178,6 +178,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		[]l2stateprovider.Height{
 			l2stateprovider.Height(blockChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
 		"good",
@@ -189,6 +190,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		"/tmp/evil",
 		[]l2stateprovider.Height{
 			l2stateprovider.Height(blockChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
@@ -602,7 +604,7 @@ func deployContractsOnly(
 	}
 	genesisInboxCount := big.NewInt(0)
 	anyTrustFastConfirmer := common.Address{}
-	miniStakeValues := []*big.Int{big.NewInt(5), big.NewInt(4), big.NewInt(3)}
+	miniStakeValues := []*big.Int{big.NewInt(5), big.NewInt(4), big.NewInt(3), big.NewInt(2)}
 	cfg := challenge_testing.GenerateRollupConfig(
 		false,
 		wasmModuleRoot,
@@ -619,7 +621,7 @@ func deployContractsOnly(
 			BigStepChallengeHeight:   bigStepChallengeLeafHeight,
 			SmallStepChallengeHeight: smallStepChallengeLeafHeight,
 		}),
-		challenge_testing.WithNumBigStepLevels(uint8(1)),       // TODO: Hardcoded.
+		challenge_testing.WithNumBigStepLevels(uint8(2)),       // TODO: Hardcoded.
 		challenge_testing.WithConfirmPeriodBlocks(uint64(120)), // TODO: Hardcoded.
 	)
 	config, err := json.Marshal(params.ArbitrumDevTestChainConfig())
