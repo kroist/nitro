@@ -343,6 +343,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		[]l2stateprovider.Height{
 			l2stateprovider.Height(blockChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
 		stateManager,
@@ -355,6 +356,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		stateManagerB,
 		[]l2stateprovider.Height{
 			l2stateprovider.Height(blockChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
