@@ -70,47 +70,9 @@ func TestArbitratorBOLDPanic(t *testing.T) {
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
-	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
-	l2chainConfig := params.ArbitrumDevTestChainConfig()
-	l2info := NewBlockChainTestInfo(
-		t,
-		types.NewArbitrumSigner(types.NewLondonSigner(l2chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
-		transferGas,
-	)
-	ownerBal := big.NewInt(params.Ether)
-	ownerBal.Mul(ownerBal, big.NewInt(1_000_000))
-	l2info.GenerateGenesisAccount("Owner", ownerBal)
-
-	_, l2node, _, _, l1info, _, l1client, l1stack, assertionChain, _ := createTestNodeOnL1ForBoldProtocol(t, ctx, true, nil, l2chainConfig, nil, l2info)
-	defer requireClose(t, l1stack)
-	defer l2node.StopAndWait()
-
-	// Make sure we shut down test functionality before the rest of the node
-	ctx, cancelCtx = context.WithCancel(ctx)
-	defer cancelCtx()
-
-	balance := big.NewInt(params.Ether)
-	balance.Mul(balance, big.NewInt(100))
-	TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
-	TransferBalance(t, "Faucet", "EvilAsserter", balance, l1info, l1client, ctx)
-
 	valCfg := valnode.TestValidationConfig
 	valCfg.UseJit = false
-	valNode, valStack := createTestValidationNode(t, ctx, &valCfg)
-	blockValidatorConfig := staker.TestBlockValidatorConfig
-
-	stateless, err := staker.NewStatelessBlockValidator(
-		l2node.InboxReader,
-		l2node.InboxTracker,
-		l2node.TxStreamer,
-		l2node.Execution,
-		l2node.ArbDB,
-		nil,
-		StaticFetcherFrom(t, &blockValidatorConfig),
-		valStack,
-	)
-	Require(t, err)
-	Require(t, stateless.Start(ctx))
+	valNode, _ := createTestValidationNode(t, ctx, &valCfg)
 
 	items, err := os.ReadFile("/tmp/block_inputs_1.json")
 	Require(t, err)
@@ -120,10 +82,7 @@ func TestArbitratorBOLDPanic(t *testing.T) {
 	validationInput, err := server_api.ValidationInputFromJson(inputJson)
 	Require(t, err)
 
-	wasmModuleRoot, err := assertionChain.RollupUserLogic().WasmModuleRoot(&bind.CallOpts{})
-	Require(t, err)
-
-	t.Log("Creating execution run")
+	wasmModuleRoot := common.HexToHash("0x416d51f728c44fa4a3149a924b9d879443522f16bc5084e4f9a7f610309ebc82")
 	execRun, err := valNode.GetExec().CreateBoldExecutionRun(wasmModuleRoot, uint64(2097152), validationInput).Await(ctx)
 	Require(t, err)
 	t.Log("Getting execution hashes from run")
