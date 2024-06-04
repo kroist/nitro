@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	challengecache "github.com/offchainlabs/nitro/staker/challenge-cache"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_api"
 )
 
 var (
@@ -391,6 +392,13 @@ func (s *StateManager) CollectMachineHashes(
 	input, err := entry.ToInput()
 	if err != nil {
 		return nil, err
+	}
+	if cfg.StepSize == l2stateprovider.StepSize(2097152) {
+		inputJson := server_api.ValidationInputToJson(input)
+		fmt.Println("Writing the validation input json to a file")
+		if err = inputJson.WriteToFile(); err != nil {
+			return nil, err
+		}
 	}
 	execRun, err := s.validator.execSpawners[0].CreateBoldExecutionRun(cfg.WasmModuleRoot, uint64(cfg.StepSize), input).Await(ctx)
 	if err != nil {
