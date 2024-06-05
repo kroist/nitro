@@ -82,7 +82,7 @@ func TestArbitratorBOLDPanic(t *testing.T) {
 	validationInput, err := server_api.ValidationInputFromJson(inputJson)
 	Require(t, err)
 
-	wasmModuleRoot := common.HexToHash("0x416d51f728c44fa4a3149a924b9d879443522f16bc5084e4f9a7f610309ebc82")
+	wasmModuleRoot := common.Hash{} // Uses the latest machine.
 	execRun, err := valNode.GetExec().CreateBoldExecutionRun(wasmModuleRoot, uint64(2097152), validationInput).Await(ctx)
 	Require(t, err)
 	t.Log("Getting execution hashes from run")
