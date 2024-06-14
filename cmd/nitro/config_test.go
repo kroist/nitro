@@ -63,15 +63,15 @@ func TestValidatorConfig(t *testing.T) {
 func TestInvalidCachingStateSchemeForValidator(t *testing.T) {
 	validatorArgsWithPathScheme := fmt.Sprintf("%s --execution.caching.state-scheme path", validatorArgs)
 	args := strings.Split(validatorArgsWithPathScheme, " ")
-	_, _, _, err := ParseNode(context.Background(), args)
+	_, _, err := ParseNode(context.Background(), args)
 	if !errors.Is(err, invalidCachingStateSchemeForValidator) {
 		Fail(t, "failed to detect invalid state scheme for validator")
 	}
 }
 
 func TestInvalidArchiveConfig(t *testing.T) {
-	args := strings.Split("--execution.caching.archive --execution.caching.state-scheme path --persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --parent-chain.wallet.pathname /l1keystore --parent-chain.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.staker.enable --node.staker.strategy MakeNodes --node.staker.staker-interval 10s --execution.forwarding-target null", " ")
-	_, _, _, err := ParseNode(context.Background(), args)
+	args := strings.Split("--execution.caching.archive --execution.caching.state-scheme path --persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --node.staker.parent-chain-wallet.pathname /l1keystore --node.staker.parent-chain-wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.staker.enable --node.staker.strategy MakeNodes --node.staker.staker-interval 10s --execution.forwarding-target null", " ")
+	_, _, err := ParseNode(context.Background(), args)
 	if !errors.Is(err, gethexec.InvalidStateSchemeForArchive) {
 		Fail(t, "failed to detect invalid state scheme for archive")
 	}
