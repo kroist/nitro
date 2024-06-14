@@ -76,7 +76,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 	}
 	return &ArbosState{
 		arbosVersion,
-		20,
+		30,
 		30,
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeVersionOffset)),
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeTimestampOffset)),
@@ -318,14 +318,6 @@ func (state *ArbosState) UpgradeArbosVersion(
 			// these versions are left to Orbit chains for custom upgrades.
 
 		case 30:
-			if !chainConfig.DebugMode() {
-				// This upgrade isn't finalized so we only want to support it for testing
-				return fmt.Errorf(
-					"the chain is upgrading to unsupported ArbOS version %v, %w",
-					nextArbosVersion,
-					ErrFatalNodeOutOfDate,
-				)
-			}
 			programs.Initialize(state.backingStorage.OpenSubStorage(programsSubspace))
 
 		default:
