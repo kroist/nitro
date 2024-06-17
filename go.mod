@@ -251,6 +251,7 @@ require (
 	github.com/samber/lo v1.36.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/supranational/blst v0.3.11 // indirect
+	github.com/tetratelabs/wazero v1.7.2 // indirect
 	github.com/urfave/cli/v2 v2.25.7 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.3.5 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
@@ -337,3 +338,5 @@ require (
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/tyler-smith/go-bip39 v1.1.0 // indirect
 )
+
+require github.com/ebitengine/purego v0.7.1

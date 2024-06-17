@@ -603,6 +603,10 @@ func Precompiles() map[addr]ArbosPrecompile {
 	arbos.InternalTxStartBlockMethodID = ArbosActs.GetMethodID("StartBlock")
 	arbos.InternalTxBatchPostingReportMethodID = ArbosActs.GetMethodID("BatchPostingReport")
 
+	RLib := InitLib()
+
+	insert(MakePrecompile(templates.ArbHiMetaData, &ArbHi{Address: hex("11a"), RLib: RLib})) // 0x011a here is an example address
+
 	return contracts
 }
 
