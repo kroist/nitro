@@ -866,6 +866,29 @@ func createTestNodeWithL1(
 		if _, err = bind.WaitMined(ctx, l1client, tx); err != nil {
 			t.Fatal(err)
 		}
+
+		// Fund the auction master.
+		l1info.GenerateAccount("AuctionMaster")
+		TransferBalance(t, "Faucet", "AuctionMaster", arbmath.BigMulByUint(oneEth, 500), l1info, l1client, ctx)
+
+		// Mint some tokens to Alice and Bob.
+		l1info.GenerateAccount("Alice")
+		l1info.GenerateAccount("Bob")
+		TransferBalance(t, "Faucet", "Alice", arbmath.BigMulByUint(oneEth, 500), l1info, l1client, ctx)
+		TransferBalance(t, "Faucet", "Bob", arbmath.BigMulByUint(oneEth, 500), l1info, l1client, ctx)
+		aliceOpts := l1info.GetDefaultTransactOpts("Alice", ctx)
+		bobOpts := l1info.GetDefaultTransactOpts("Bob", ctx)
+		tx, err = erc20.Mint(&sequencerTxOpts, aliceOpts.From, big.NewInt(100))
+		Require(t, err)
+		if _, err = bind.WaitMined(ctx, l1client, tx); err != nil {
+			t.Fatal(err)
+		}
+		tx, err = erc20.Mint(&sequencerTxOpts, bobOpts.From, big.NewInt(100))
+		Require(t, err)
+		if _, err = bind.WaitMined(ctx, l1client, tx); err != nil {
+			t.Fatal(err)
+		}
+
 		expressLaneAddr := common.HexToAddress("0x2424242424242424242424242424242424242424")
 		bidReceiverAddr := common.HexToAddress("0x3424242424242424242424242424242424242424")
 		bidRoundSeconds := uint64(60)
@@ -888,6 +911,7 @@ func createTestNodeWithL1(
 		}
 		t.Log("Deployed all the auction manager stuff", auctionContractAddr)
 		execConfig.Sequencer.Timeboost.AuctionMasterAddress = auctionContractAddr.Hex()
+		execConfig.Sequencer.Timeboost.ERC20Address = erc20Addr.Hex()
 	}
 
 	if !isSequencer {

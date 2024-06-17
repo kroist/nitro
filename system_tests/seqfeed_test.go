@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -110,19 +111,56 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	seqInfo, _, seqClient := builderSeq.L2Info, builderSeq.L2.ConsensusNode, builderSeq.L2.Client
 
 	auctionAddr := builderSeq.L2.ExecNode.Sequencer.ExpressLaneAuction()
+	erc20Addr := builderSeq.L2.ExecNode.Sequencer.ExpressLaneERC20()
 
 	auctionContract, err := bindings.NewExpressLaneAuction(auctionAddr, builderSeq.L1.Client)
 	Require(t, err)
-	currentRound, err := auctionContract.CurrentRound(&bind.CallOpts{})
-	Require(t, err)
-	t.Log("Current round", currentRound)
 	_ = seqInfo
 	_ = seqClient
-	time.Sleep(time.Minute * 10)
+	l1client := builderSeq.L1.Client
+
+	// We approve the spending of the erc20 for the auction master contract and bid receiver
+	// for both Alice and Bob.
+	bidReceiverAddr := common.HexToAddress("0x3424242424242424242424242424242424242424")
+	aliceOpts := builderSeq.L1Info.GetDefaultTransactOpts("Alice", ctx)
+	bobOpts := builderSeq.L1Info.GetDefaultTransactOpts("Bob", ctx)
+
+	maxUint256 := big.NewInt(1)
+	maxUint256.Lsh(maxUint256, 256).Sub(maxUint256, big.NewInt(1))
+	erc20, err := bindings.NewMockERC20(erc20Addr, builderSeq.L1.Client)
+	Require(t, err)
+
+	tx, err := erc20.Approve(
+		&aliceOpts, auctionAddr, maxUint256,
+	)
+	Require(t, err)
+	if _, err = bind.WaitMined(ctx, l1client, tx); err != nil {
+		t.Fatal(err)
+	}
+	tx, err = erc20.Approve(
+		&aliceOpts, bidReceiverAddr, maxUint256,
+	)
+	Require(t, err)
+	if _, err = bind.WaitMined(ctx, l1client, tx); err != nil {
+		t.Fatal(err)
+	}
+	tx, err = erc20.Approve(
+		&bobOpts, auctionAddr, maxUint256,
+	)
+	Require(t, err)
+	if _, err = bind.WaitMined(ctx, l1client, tx); err != nil {
+		t.Fatal(err)
+	}
+	tx, err = erc20.Approve(
+		&bobOpts, bidReceiverAddr, maxUint256,
+	)
+	Require(t, err)
+	if _, err = bind.WaitMined(ctx, l1client, tx); err != nil {
+		t.Fatal(err)
+	}
 
 	// Set up an auction master service that runs in the background in this test.
 	auctionMasterOpts := builderSeq.L1Info.GetDefaultTransactOpts("AuctionMaster", ctx)
-	l1client := builderSeq.L1.Client
 	chainId, err := l1client.ChainID(ctx)
 	Require(t, err)
 	auctionMaster, err := timeboost.NewAuctionMaster(&auctionMasterOpts, chainId, builderSeq.L1.Client, auctionContract)
@@ -131,7 +169,6 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	go auctionMaster.Start(ctx)
 
 	// Set up a bidder client for Alice and Bob.
-	aliceOpts := builderSeq.L1Info.GetDefaultTransactOpts("Alice", ctx)
 	alicePriv := builderSeq.L1Info.Accounts["Alice"].PrivateKey
 	alice, err := timeboost.NewBidderClient(
 		ctx,
@@ -148,7 +185,6 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	Require(t, err)
 	go alice.Start(ctx)
 
-	bobOpts := builderSeq.L1Info.GetDefaultTransactOpts("Bob", ctx)
 	bobPriv := builderSeq.L1Info.Accounts["Bob"].PrivateKey
 	bob, err := timeboost.NewBidderClient(
 		ctx,
@@ -165,18 +201,118 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	Require(t, err)
 	go bob.Start(ctx)
 
-	// Participate in the next round's auction.
+	t.Log("Started auction master stack and bid clients")
+	Require(t, alice.Deposit(ctx, big.NewInt(5)))
+	Require(t, bob.Deposit(ctx, big.NewInt(5)))
+	t.Log("Alice and Bob are now deposited into the auction master contract, waiting for bidding round...")
 
-	// Wait until the auction closes.
-	// TODO: Subscribe to the event from the auction manager contract instead.
+	// Wait until the next timeboost round + a few milliseconds.
+	now := time.Now()
+	roundDuration := time.Minute
+	waitTime := roundDuration - time.Duration(now.Second())*time.Second - time.Duration(now.Nanosecond())
+	time.Sleep(waitTime)
+	ticker := time.NewTicker(time.Minute)
+	<-ticker.C
+	ticker.Stop()
+	time.Sleep(time.Millisecond * 100)
+
+	// We are now in the bidding round, both issue their bids. Bob will win.
+	t.Log("Alice and Bob now submitting their bids")
+	_, err = alice.Bid(ctx, big.NewInt(1))
+	Require(t, err)
+	_, err = bob.Bid(ctx, big.NewInt(2))
+	Require(t, err)
+
+	// Subscribe to auction resolutions and wait for Bob to win the auction.
+	winner := awaitAuctionResolved(t, ctx, l1client, auctionContract)
 
 	// Verify Bob owns the express lane this round.
+	if winner != bobOpts.From {
+		t.Fatal("Bob should have won the express lane auction")
+	}
+	t.Log("Bob won the express lane auction for upcoming round, now waiting for that round to start...")
+
+	// Wait until the round that Bob owns the express lane for.
+	now = time.Now()
+	waitTime = roundDuration - time.Duration(now.Second())*time.Second - time.Duration(now.Nanosecond())
+	time.Sleep(waitTime)
+	ticker = time.NewTicker(time.Minute)
+	<-ticker.C
+	ticker.Stop()
+
+	current, err := auctionContract.CurrentExpressLaneController(&bind.CallOpts{})
+	Require(t, err)
+
+	if current != bobOpts.From {
+		t.Fatal("Current express lane round controller is not Bob")
+	}
+
+	t.Log("Now submitting txs to sequencer")
 
 	// During the express lane around, Bob sends txs always 150ms later than Alice, but Alice's
 	// txs end up getting delayed by 200ms as she is not the express lane controller.
 	// In the end, Bob's txs should be ordered before Alice's during the round.
+	// TODO: Implement...
+	tx = seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1e12), nil)
+	err = seqClient.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = builderSeq.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	time.Sleep(time.Millisecond * 150)
+
+	tx = seqInfo.PrepareTx("Bob", "Owner", seqInfo.TransferGas, big.NewInt(1e12), nil)
+	err = seqClient.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = builderSeq.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
 
 	// After round is done, verify that Alice beats Bob in the final sequence.
+	// TODO: Implement...
+
+	time.Sleep(time.Hour)
+}
+
+func awaitAuctionResolved(
+	t *testing.T,
+	ctx context.Context,
+	client *ethclient.Client,
+	contract *bindings.ExpressLaneAuction,
+) common.Address {
+	fromBlock, err := client.BlockNumber(ctx)
+	Require(t, err)
+	ticker := time.NewTicker(time.Millisecond * 100)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return common.Address{}
+		case <-ticker.C:
+			latestBlock, err := client.HeaderByNumber(ctx, nil)
+			if err != nil {
+				log.Error("Could not get latest header", "err", err)
+				continue
+			}
+			toBlock := latestBlock.Number.Uint64()
+			if fromBlock == toBlock {
+				continue
+			}
+			filterOpts := &bind.FilterOpts{
+				Context: ctx,
+				Start:   fromBlock,
+				End:     &toBlock,
+			}
+			it, err := contract.FilterAuctionResolved(filterOpts, nil, nil)
+			if err != nil {
+				log.Error("Could not filter auction resolutions", "error", err)
+				continue
+			}
+			for it.Next() {
+				return it.Event.WinningBidder
+			}
+		}
+	}
+	return common.Address{}
 }
 
 func TestRelayedSequencerFeed(t *testing.T) {

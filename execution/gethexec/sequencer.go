@@ -86,12 +86,14 @@ type SequencerConfig struct {
 type TimeboostConfig struct {
 	Enable               bool          `koanf:"enable"`
 	AuctionMasterAddress string        `koanf:"auction-master-address"`
+	ERC20Address         string        `koanf:"erc20-address"`
 	ExpressLaneAdvantage time.Duration `koanf:"express-lane-advantage"`
 }
 
 var DefaultTimeboostConfig = TimeboostConfig{
 	Enable:               false,
 	AuctionMasterAddress: "",
+	ERC20Address:         "",
 	ExpressLaneAdvantage: time.Millisecond * 200,
 }
 
@@ -410,6 +412,13 @@ func (s *Sequencer) ExpressLaneAuction() common.Address {
 		return common.Address{}
 	}
 	return common.HexToAddress(s.config().Timeboost.AuctionMasterAddress)
+}
+
+func (s *Sequencer) ExpressLaneERC20() common.Address {
+	if s.expressLaneService == nil {
+		return common.Address{}
+	}
+	return common.HexToAddress(s.config().Timeboost.ERC20Address)
 }
 
 func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {

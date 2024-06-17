@@ -59,6 +59,7 @@ func newExpressLaneService(
 		return nil, err
 	}
 	return &expressLaneService{
+		auctionContract:  auctionContract,
 		client:           client,
 		initialTimestamp: initialTimestamp,
 		control: expressLaneControl{
