@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -21,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster/backlog"
 	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/execution/gethexec/timeboost/bindings"
 	"github.com/offchainlabs/nitro/relay"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -87,6 +89,150 @@ func TestSequencerFeed(t *testing.T) {
 	if logHandler.WasLogged(arbnode.BlockHashMismatchLogMsg) {
 		t.Fatal("BlockHashMismatchLogMsg was logged unexpectedly")
 	}
+}
+
+func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, true)
+
+	builderSeq.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
+	builderSeq.execConfig.Sequencer.Enable = true
+	builderSeq.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
+		Enable:               true,
+		ExpressLaneAdvantage: time.Millisecond * 200,
+	}
+	cleanupSeq := builderSeq.Build(t)
+	defer cleanupSeq()
+	seqInfo, _, seqClient := builderSeq.L2Info, builderSeq.L2.ConsensusNode, builderSeq.L2.Client
+
+	auctionAddr := builderSeq.L2.ExecNode.Sequencer.ExpressLaneAuction()
+
+	auctionContract, err := bindings.NewExpressLaneAuction(auctionAddr, builderSeq.L1.Client)
+	Require(t, err)
+	currentRound, err := auctionContract.CurrentRound(&bind.CallOpts{})
+	Require(t, err)
+	t.Log("Current round", currentRound)
+	_ = seqInfo
+	_ = seqClient
+	time.Sleep(time.Minute * 10)
+	// Seed N different accounts with value.
+	// Mint tokens and deposit into the auction contract.
+	// numAccounts := 10
+	// users := make([]common.Address, numAccounts)
+	// for i := 0; i < numAccounts; i++ {
+	// 	userName := fmt.Sprintf("User%d", i)
+	// 	seqInfo.GenerateAccount(userName)
+	// 	tx := seqInfo.PrepareTx("Owner", userName, seqInfo.TransferGas, big.NewInt(1e18), nil)
+	// 	Require(t, seqClient.SendTransaction(ctx, tx))
+	// 	_, err := EnsureTxSucceeded(ctx, seqClient, tx)
+	// 	Require(t, err)
+	// 	users[i] = seqInfo.GetAddress(userName)
+	// }
+
+	// Prepare a bunch of boostable transactions to send to the sequencer
+	// with tx boost enabled to ensure that they are ordered according to the score provided by the
+	// express lane ordering policy.
+	// type txsForUser struct {
+	// 	txs []common.Hash
+	// 	sync.RWMutex
+	// }
+
+	// userTxs := &txsForUser{
+	// 	txs: make([]common.Hash, len(users)),
+	// }
+
+	// sendNonBoostedTx := func(userIdx uint64) {
+	// 	userName := fmt.Sprintf("User%d", userIdx)
+	// 	tx := seqInfo.PrepareTx(userName, "Owner", seqInfo.TransferGas, big.NewInt(1e12), nil)
+	// 	err := seqClient.SendTransaction(ctx, tx)
+	// 	Require(t, err)
+	// 	_, err = builderSeq.L2.EnsureTxSucceeded(tx)
+	// 	Require(t, err)
+
+	// 	userTxs.Lock()
+	// 	userTxs.txs[userIdx] = tx.Hash()
+	// 	userTxs.Unlock()
+	// }
+
+	// // Send out 10 boosted and 10 non-boosted transactions concurrently.
+	// time.Sleep(time.Millisecond * 50)
+	// var wg sync.WaitGroup
+
+	// numBoostedTxs := 5
+	// numNonBoostedTxs := 5
+	// numTxs := numBoostedTxs + numNonBoostedTxs
+	// wg.Add(numTxs)
+	// for i := 0; i < numBoostedTxs; i++ {
+	// 	userIdx := i
+	// 	go func(ii uint64, w *sync.WaitGroup) {
+	// 		defer w.Done()
+	// 		// ensureTxPaysNetworkTip(ii)
+	// 	}(uint64(userIdx), &wg)
+	// }
+	// for i := 0; i < numNonBoostedTxs; i++ {
+	// 	userIdx := numBoostedTxs + i
+	// 	go func(ii uint64, w *sync.WaitGroup) {
+	// 		defer w.Done()
+	// 		sendNonBoostedTx(ii)
+	// 	}(uint64(userIdx), &wg)
+	// }
+	// wg.Wait()
+
+	// // Group txs by block number.
+	// blockNumSet := make(map[uint64]struct{})
+	// for _, tx := range userTxs.txs {
+	// 	receipt, err := seqClient.TransactionReceipt(ctx, tx)
+	// 	Require(t, err)
+	// 	blockNum := receipt.BlockNumber.Uint64()
+	// 	blockNumSet[blockNum] = struct{}{}
+	// }
+	// blockNums := make([]uint64, 0, len(blockNumSet))
+	// for n := range blockNumSet {
+	// 	blockNums = append(blockNums, n)
+	// }
+	// slices.Sort[[]uint64](blockNums)
+	// t.Log(blockNums)
+
+	// // For a slice of "scores" assigned to txs by a bid policy, we check
+	// // that tx scores are sorted in descending order before any 0. That is, the policy
+	// // should sequence txs by score like this:
+	// // [4, 3, 2, 1, 0, 0, 0].
+	// checkExpressLaneScoresComeFirst := func(slice []uint64) bool {
+	// 	foundZero := false
+	// 	for _, value := range slice {
+	// 		if value == 0 {
+	// 			foundZero = true
+	// 		} else if value == 1 && foundZero {
+	// 			// If a 1 is found after a 0, return false
+	// 			return false
+	// 		}
+	// 	}
+	// 	return true
+	// }
+
+	// // For the txs within each block, we check those with a scoring function of 1 come first and always before
+	// // those with a score of 0. These "express lane" txs are those that are using the tipping tx type.
+	// for _, blockNum := range blockNums {
+	// 	block, err := seqClient.BlockByNumber(ctx, new(big.Int).SetUint64(blockNum))
+	// 	Require(t, err)
+
+	// 	blockTxs := block.Transactions()
+
+	// 	// Strip the first tx (sequencer message not relevant).
+	// 	blockTxs = blockTxs[1:]
+	// 	txScores := make([]uint64, len(blockTxs))
+	// 	for i, tx := range blockTxs {
+	// 		// txScores[i] = tx
+	// 		_ = i
+	// 		_ = tx
+	// 	}
+	// 	if !checkExpressLaneScoresComeFirst(txScores) {
+	// 		t.Fatal("Expected express lane txs to be ordered first in a block")
+	// 	}
+	// }
 }
 
 func TestRelayedSequencerFeed(t *testing.T) {

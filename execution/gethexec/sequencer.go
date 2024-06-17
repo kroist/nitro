@@ -405,6 +405,13 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 	return s, nil
 }
 
+func (s *Sequencer) ExpressLaneAuction() common.Address {
+	if s.expressLaneService == nil {
+		return common.Address{}
+	}
+	return common.HexToAddress(s.config().Timeboost.AuctionMasterAddress)
+}
+
 func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {
 	if failure.revived {
 		return
