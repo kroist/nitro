@@ -135,7 +135,7 @@ func (bd *bidderClient) monitorAuctionResolutions(ctx context.Context) {
 				continue
 			}
 			for it.Next() {
-				upcomingRound := currentRound(bd.initialRoundTimestamp, bd.roundDuration) + 1
+				upcomingRound := CurrentRound(bd.initialRoundTimestamp, bd.roundDuration) + 1
 				ev := it.Event
 				if ev.WinnerRound.Uint64() == upcomingRound {
 					// TODO: Log the time to next round.
@@ -190,7 +190,7 @@ func (bd *bidderClient) monitorExpressLaneDelegations(ctx context.Context) {
 				continue
 			}
 			for it.Next() {
-				upcomingRound := currentRound(bd.initialRoundTimestamp, bd.roundDuration) + 1
+				upcomingRound := CurrentRound(bd.initialRoundTimestamp, bd.roundDuration) + 1
 				ev := it.Event
 				// TODO: Log the time to next round.
 				log.Info(
@@ -226,7 +226,7 @@ func (bd *bidderClient) bid(ctx context.Context, amount *big.Int) (*bid, error) 
 	newBid := &bid{
 		chainId: bd.chainId,
 		address: bd.txOpts.From,
-		round:   currentRound(bd.initialRoundTimestamp, bd.roundDuration) + 1,
+		round:   CurrentRound(bd.initialRoundTimestamp, bd.roundDuration) + 1,
 		amount:  amount,
 	}
 	packedBidBytes, err := encodeBidValues(

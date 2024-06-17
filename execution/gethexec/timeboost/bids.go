@@ -48,7 +48,7 @@ func (am *auctionMaster) newValidatedBid(bid *bid) (*validatedBid, error) {
 		return nil, errors.Wrapf(ErrWrongChainId, "wanted %#x, got %#x", am.chainId, bid.chainId)
 	}
 	// Check if for upcoming round.
-	upcomingRound := currentRound(am.initialRoundTimestamp, am.roundDuration) + 1
+	upcomingRound := CurrentRound(am.initialRoundTimestamp, am.roundDuration) + 1
 	if bid.round != upcomingRound {
 		return nil, errors.Wrapf(ErrBadRoundNumber, "wanted %d, got %d", upcomingRound, bid.round)
 	}

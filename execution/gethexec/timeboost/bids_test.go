@@ -40,7 +40,7 @@ func TestWinningBidderBecomesExpressLaneController(t *testing.T) {
 	require.NoError(t, am.resolveAuctions(ctx))
 
 	// Expect Alice to have become the next express lane controller.
-	upcomingRound := currentRound(am.initialRoundTimestamp, am.roundDuration) + 1
+	upcomingRound := CurrentRound(am.initialRoundTimestamp, am.roundDuration) + 1
 	controller, err := testSetup.auctionContract.ExpressLaneControllerByRound(&bind.CallOpts{}, big.NewInt(int64(upcomingRound)))
 	require.NoError(t, err)
 	require.Equal(t, alice.txOpts.From, controller)

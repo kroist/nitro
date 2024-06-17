@@ -109,7 +109,7 @@ func (am *auctionMaster) Start(ctx context.Context) {
 }
 
 func (am *auctionMaster) resolveAuctions(ctx context.Context) error {
-	upcomingRound := currentRound(am.initialRoundTimestamp, am.roundDuration) + 1
+	upcomingRound := CurrentRound(am.initialRoundTimestamp, am.roundDuration) + 1
 	// If we have no winner, then we can cancel the auction.
 	// Auction master can also subscribe to sequencer feed and
 	// close auction if sequencer is down.
@@ -179,6 +179,6 @@ func (am *auctionMaster) checkSequencerHealth(ctx context.Context) {
 
 }
 
-func currentRound(initialRoundTimestamp time.Time, roundDuration time.Duration) uint64 {
+func CurrentRound(initialRoundTimestamp time.Time, roundDuration time.Duration) uint64 {
 	return uint64(time.Since(initialRoundTimestamp) / roundDuration)
 }
