@@ -108,11 +108,11 @@ func setupAuctionTest(t *testing.T, ctx context.Context) *auctionSetup {
 
 func setupBidderClient(
 	t *testing.T, ctx context.Context, name string, account *testAccount, testSetup *auctionSetup,
-) *bidderClient {
-	bc, err := newBidderClient(
+) *BidderClient {
+	bc, err := NewBidderClient(
 		ctx,
 		name,
-		&wallet{txOpts: account.txOpts, privKey: account.privKey},
+		&Wallet{TxOpts: account.txOpts, PrivKey: account.privKey},
 		testSetup.backend.Client(),
 		testSetup.auctionMasterAddr,
 		nil,

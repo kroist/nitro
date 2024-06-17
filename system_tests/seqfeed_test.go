@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster/backlog"
 	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/execution/gethexec/timeboost"
 	"github.com/offchainlabs/nitro/execution/gethexec/timeboost/bindings"
 	"github.com/offchainlabs/nitro/relay"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -118,121 +119,64 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	_ = seqInfo
 	_ = seqClient
 	time.Sleep(time.Minute * 10)
-	// Seed N different accounts with value.
-	// Mint tokens and deposit into the auction contract.
-	// numAccounts := 10
-	// users := make([]common.Address, numAccounts)
-	// for i := 0; i < numAccounts; i++ {
-	// 	userName := fmt.Sprintf("User%d", i)
-	// 	seqInfo.GenerateAccount(userName)
-	// 	tx := seqInfo.PrepareTx("Owner", userName, seqInfo.TransferGas, big.NewInt(1e18), nil)
-	// 	Require(t, seqClient.SendTransaction(ctx, tx))
-	// 	_, err := EnsureTxSucceeded(ctx, seqClient, tx)
-	// 	Require(t, err)
-	// 	users[i] = seqInfo.GetAddress(userName)
-	// }
 
-	// Prepare a bunch of boostable transactions to send to the sequencer
-	// with tx boost enabled to ensure that they are ordered according to the score provided by the
-	// express lane ordering policy.
-	// type txsForUser struct {
-	// 	txs []common.Hash
-	// 	sync.RWMutex
-	// }
+	// Set up an auction master service that runs in the background in this test.
+	auctionMasterOpts := builderSeq.L1Info.GetDefaultTransactOpts("AuctionMaster", ctx)
+	l1client := builderSeq.L1.Client
+	chainId, err := l1client.ChainID(ctx)
+	Require(t, err)
+	auctionMaster, err := timeboost.NewAuctionMaster(&auctionMasterOpts, chainId, builderSeq.L1.Client, auctionContract)
+	Require(t, err)
 
-	// userTxs := &txsForUser{
-	// 	txs: make([]common.Hash, len(users)),
-	// }
+	go auctionMaster.Start(ctx)
 
-	// sendNonBoostedTx := func(userIdx uint64) {
-	// 	userName := fmt.Sprintf("User%d", userIdx)
-	// 	tx := seqInfo.PrepareTx(userName, "Owner", seqInfo.TransferGas, big.NewInt(1e12), nil)
-	// 	err := seqClient.SendTransaction(ctx, tx)
-	// 	Require(t, err)
-	// 	_, err = builderSeq.L2.EnsureTxSucceeded(tx)
-	// 	Require(t, err)
+	// Set up a bidder client for Alice and Bob.
+	aliceOpts := builderSeq.L1Info.GetDefaultTransactOpts("Alice", ctx)
+	alicePriv := builderSeq.L1Info.Accounts["Alice"].PrivateKey
+	alice, err := timeboost.NewBidderClient(
+		ctx,
+		"alice",
+		&timeboost.Wallet{
+			TxOpts:  &aliceOpts,
+			PrivKey: alicePriv,
+		},
+		l1client,
+		auctionAddr,
+		nil,
+		auctionMaster,
+	)
+	Require(t, err)
+	go alice.Start(ctx)
 
-	// 	userTxs.Lock()
-	// 	userTxs.txs[userIdx] = tx.Hash()
-	// 	userTxs.Unlock()
-	// }
+	bobOpts := builderSeq.L1Info.GetDefaultTransactOpts("Bob", ctx)
+	bobPriv := builderSeq.L1Info.Accounts["Bob"].PrivateKey
+	bob, err := timeboost.NewBidderClient(
+		ctx,
+		"bob",
+		&timeboost.Wallet{
+			TxOpts:  &bobOpts,
+			PrivKey: bobPriv,
+		},
+		l1client,
+		auctionAddr,
+		nil,
+		auctionMaster,
+	)
+	Require(t, err)
+	go bob.Start(ctx)
 
-	// // Send out 10 boosted and 10 non-boosted transactions concurrently.
-	// time.Sleep(time.Millisecond * 50)
-	// var wg sync.WaitGroup
+	// Participate in the next round's auction.
 
-	// numBoostedTxs := 5
-	// numNonBoostedTxs := 5
-	// numTxs := numBoostedTxs + numNonBoostedTxs
-	// wg.Add(numTxs)
-	// for i := 0; i < numBoostedTxs; i++ {
-	// 	userIdx := i
-	// 	go func(ii uint64, w *sync.WaitGroup) {
-	// 		defer w.Done()
-	// 		// ensureTxPaysNetworkTip(ii)
-	// 	}(uint64(userIdx), &wg)
-	// }
-	// for i := 0; i < numNonBoostedTxs; i++ {
-	// 	userIdx := numBoostedTxs + i
-	// 	go func(ii uint64, w *sync.WaitGroup) {
-	// 		defer w.Done()
-	// 		sendNonBoostedTx(ii)
-	// 	}(uint64(userIdx), &wg)
-	// }
-	// wg.Wait()
+	// Wait until the auction closes.
+	// TODO: Subscribe to the event from the auction manager contract instead.
 
-	// // Group txs by block number.
-	// blockNumSet := make(map[uint64]struct{})
-	// for _, tx := range userTxs.txs {
-	// 	receipt, err := seqClient.TransactionReceipt(ctx, tx)
-	// 	Require(t, err)
-	// 	blockNum := receipt.BlockNumber.Uint64()
-	// 	blockNumSet[blockNum] = struct{}{}
-	// }
-	// blockNums := make([]uint64, 0, len(blockNumSet))
-	// for n := range blockNumSet {
-	// 	blockNums = append(blockNums, n)
-	// }
-	// slices.Sort[[]uint64](blockNums)
-	// t.Log(blockNums)
+	// Verify Bob owns the express lane this round.
 
-	// // For a slice of "scores" assigned to txs by a bid policy, we check
-	// // that tx scores are sorted in descending order before any 0. That is, the policy
-	// // should sequence txs by score like this:
-	// // [4, 3, 2, 1, 0, 0, 0].
-	// checkExpressLaneScoresComeFirst := func(slice []uint64) bool {
-	// 	foundZero := false
-	// 	for _, value := range slice {
-	// 		if value == 0 {
-	// 			foundZero = true
-	// 		} else if value == 1 && foundZero {
-	// 			// If a 1 is found after a 0, return false
-	// 			return false
-	// 		}
-	// 	}
-	// 	return true
-	// }
+	// During the express lane around, Bob sends txs always 150ms later than Alice, but Alice's
+	// txs end up getting delayed by 200ms as she is not the express lane controller.
+	// In the end, Bob's txs should be ordered before Alice's during the round.
 
-	// // For the txs within each block, we check those with a scoring function of 1 come first and always before
-	// // those with a score of 0. These "express lane" txs are those that are using the tipping tx type.
-	// for _, blockNum := range blockNums {
-	// 	block, err := seqClient.BlockByNumber(ctx, new(big.Int).SetUint64(blockNum))
-	// 	Require(t, err)
-
-	// 	blockTxs := block.Transactions()
-
-	// 	// Strip the first tx (sequencer message not relevant).
-	// 	blockTxs = blockTxs[1:]
-	// 	txScores := make([]uint64, len(blockTxs))
-	// 	for i, tx := range blockTxs {
-	// 		// txScores[i] = tx
-	// 		_ = i
-	// 		_ = tx
-	// 	}
-	// 	if !checkExpressLaneScoresComeFirst(txScores) {
-	// 		t.Fatal("Expected express lane txs to be ordered first in a block")
-	// 	}
-	// }
+	// After round is done, verify that Alice beats Bob in the final sequence.
 }
 
 func TestRelayedSequencerFeed(t *testing.T) {

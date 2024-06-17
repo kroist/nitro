@@ -24,10 +24,10 @@ type sequencerConnection interface {
 }
 
 type auctionMasterConnection interface {
-	SubmitBid(ctx context.Context, bid *bid) error
+	SubmitBid(ctx context.Context, bid *Bid) error
 }
 
-type bidderClient struct {
+type BidderClient struct {
 	chainId               uint64
 	name                  string
 	signatureDomain       uint16
@@ -42,20 +42,20 @@ type bidderClient struct {
 }
 
 // TODO: Provide a safer option.
-type wallet struct {
-	txOpts  *bind.TransactOpts
-	privKey *ecdsa.PrivateKey
+type Wallet struct {
+	TxOpts  *bind.TransactOpts
+	PrivKey *ecdsa.PrivateKey
 }
 
-func newBidderClient(
+func NewBidderClient(
 	ctx context.Context,
 	name string,
-	wallet *wallet,
+	wallet *Wallet,
 	client simulated.Client,
 	auctionContractAddress common.Address,
 	sequencer sequencerConnection,
 	auctionMaster auctionMasterConnection,
-) (*bidderClient, error) {
+) (*BidderClient, error) {
 	chainId, err := client.ChainID(ctx)
 	if err != nil {
 		return nil, err
@@ -76,13 +76,13 @@ func newBidderClient(
 	if err != nil {
 		return nil, err
 	}
-	return &bidderClient{
+	return &BidderClient{
 		chainId:               chainId.Uint64(),
 		name:                  name,
 		signatureDomain:       sigDomain,
 		client:                client,
-		txOpts:                wallet.txOpts,
-		privKey:               wallet.privKey,
+		txOpts:                wallet.TxOpts,
+		privKey:               wallet.PrivKey,
 		auctionContract:       auctionContract,
 		sequencer:             sequencer,
 		auctionMaster:         auctionMaster,
@@ -91,7 +91,7 @@ func newBidderClient(
 	}, nil
 }
 
-func (bd *bidderClient) Start(ctx context.Context) {
+func (bd *BidderClient) Start(ctx context.Context) {
 	// Monitor for newly assigned express lane controllers, and if the client's address
 	// is the controller in order to send express lane txs.
 	go bd.monitorAuctionResolutions(ctx)
@@ -101,7 +101,7 @@ func (bd *bidderClient) Start(ctx context.Context) {
 	go bd.monitorExpressLaneDelegations(ctx)
 }
 
-func (bd *bidderClient) monitorAuctionResolutions(ctx context.Context) {
+func (bd *BidderClient) monitorAuctionResolutions(ctx context.Context) {
 	winningBidders := []common.Address{bd.txOpts.From}
 	latestBlock, err := bd.client.HeaderByNumber(ctx, nil)
 	if err != nil {
@@ -152,11 +152,11 @@ func (bd *bidderClient) monitorAuctionResolutions(ctx context.Context) {
 	}
 }
 
-func (bd *bidderClient) monitorAuctionCancelations(ctx context.Context) {
+func (bd *BidderClient) monitorAuctionCancelations(ctx context.Context) {
 	// TODO: Implement.
 }
 
-func (bd *bidderClient) monitorExpressLaneDelegations(ctx context.Context) {
+func (bd *BidderClient) monitorExpressLaneDelegations(ctx context.Context) {
 	delegatedTo := []common.Address{bd.txOpts.From}
 	latestBlock, err := bd.client.HeaderByNumber(ctx, nil)
 	if err != nil {
@@ -203,11 +203,11 @@ func (bd *bidderClient) monitorExpressLaneDelegations(ctx context.Context) {
 	}
 }
 
-func (bd *bidderClient) sendExpressLaneTx(ctx context.Context, tx *types.Transaction) error {
+func (bd *BidderClient) sendExpressLaneTx(ctx context.Context, tx *types.Transaction) error {
 	return bd.sequencer.SendExpressLaneTx(ctx, tx)
 }
 
-func (bd *bidderClient) deposit(ctx context.Context, amount *big.Int) error {
+func (bd *BidderClient) Deposit(ctx context.Context, amount *big.Int) error {
 	tx, err := bd.auctionContract.SubmitDeposit(bd.txOpts, amount)
 	if err != nil {
 		return err
@@ -222,8 +222,8 @@ func (bd *bidderClient) deposit(ctx context.Context, amount *big.Int) error {
 	return nil
 }
 
-func (bd *bidderClient) bid(ctx context.Context, amount *big.Int) (*bid, error) {
-	newBid := &bid{
+func (bd *BidderClient) Bid(ctx context.Context, amount *big.Int) (*Bid, error) {
+	newBid := &Bid{
 		chainId: bd.chainId,
 		address: bd.txOpts.From,
 		round:   CurrentRound(bd.initialRoundTimestamp, bd.roundDuration) + 1,

@@ -23,7 +23,7 @@ var (
 	ErrInsufficientBalance = errors.New("insufficient balance")
 )
 
-type bid struct {
+type Bid struct {
 	chainId   uint64
 	address   common.Address
 	round     uint64
@@ -32,10 +32,10 @@ type bid struct {
 }
 
 type validatedBid struct {
-	bid
+	Bid
 }
 
-func (am *auctionMaster) newValidatedBid(bid *bid) (*validatedBid, error) {
+func (am *AuctionMaster) newValidatedBid(bid *Bid) (*validatedBid, error) {
 	// Check basic integrity.
 	if bid == nil {
 		return nil, errors.Wrap(ErrMalformedData, "nil bid")

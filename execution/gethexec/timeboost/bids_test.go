@@ -18,11 +18,11 @@ func TestWinningBidderBecomesExpressLaneController(t *testing.T) {
 	// Set up two different bidders.
 	alice := setupBidderClient(t, ctx, "alice", testSetup.accounts[0], testSetup)
 	bob := setupBidderClient(t, ctx, "bob", testSetup.accounts[1], testSetup)
-	require.NoError(t, alice.deposit(ctx, big.NewInt(5)))
-	require.NoError(t, bob.deposit(ctx, big.NewInt(5)))
+	require.NoError(t, alice.Deposit(ctx, big.NewInt(5)))
+	require.NoError(t, bob.Deposit(ctx, big.NewInt(5)))
 
 	// Set up a new auction master instance that can validate bids.
-	am, err := newAuctionMaster(
+	am, err := NewAuctionMaster(
 		testSetup.accounts[2].txOpts, testSetup.chainId, testSetup.backend.Client(), testSetup.auctionContract,
 	)
 	require.NoError(t, err)
@@ -30,9 +30,9 @@ func TestWinningBidderBecomesExpressLaneController(t *testing.T) {
 	bob.auctionMaster = am
 
 	// Form two new bids for the round, with Alice being the bigger one.
-	aliceBid, err := alice.bid(ctx, big.NewInt(2))
+	aliceBid, err := alice.Bid(ctx, big.NewInt(2))
 	require.NoError(t, err)
-	bobBid, err := bob.bid(ctx, big.NewInt(1))
+	bobBid, err := bob.Bid(ctx, big.NewInt(1))
 	require.NoError(t, err)
 	_, _ = aliceBid, bobBid
 
@@ -54,17 +54,17 @@ func TestSubmitBid_OK(t *testing.T) {
 
 	// Make a deposit as a bidder into the contract.
 	bc := setupBidderClient(t, ctx, "alice", testSetup.accounts[0], testSetup)
-	require.NoError(t, bc.deposit(ctx, big.NewInt(5)))
+	require.NoError(t, bc.Deposit(ctx, big.NewInt(5)))
 
 	// Set up a new auction master instance that can validate bids.
-	am, err := newAuctionMaster(
+	am, err := NewAuctionMaster(
 		testSetup.accounts[1].txOpts, testSetup.chainId, testSetup.backend.Client(), testSetup.auctionContract,
 	)
 	require.NoError(t, err)
 	bc.auctionMaster = am
 
 	// Form a new bid with an amount.
-	newBid, err := bc.bid(ctx, big.NewInt(5))
+	newBid, err := bc.Bid(ctx, big.NewInt(5))
 	require.NoError(t, err)
 
 	// Check the bid passes validation.
